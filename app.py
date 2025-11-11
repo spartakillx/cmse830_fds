@@ -134,10 +134,7 @@ df = merged_data(players_df, teams_df)
 # 2) APP HEADER + NAV TABS (self-documenting)
 # =========================================
 st.title("🏀 Basketball Analytics & Player Performance Dashboard")
-st.caption(
-    "Midterm-ready: multi-source data, cleaning/encoding, missing-data handling, "
-    "3+ visualizations, interactive comparisons, team summaries, and documentation."
-)
+
 
 tabs = st.tabs(["Overview", "EDA", "Player Comparison", "Team Summary", "Missing Data"])
 
