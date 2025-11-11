@@ -1,6 +1,5 @@
 # ==================================================
 # BASKETBALL ANALYTICS DASHBOARD (NBA 2024–25)
-# Midterm-ready: hits rubric items for data, EDA, processing, app UX, docs
 # ==================================================
 import streamlit as st
 import pandas as pd
@@ -140,7 +139,7 @@ st.caption(
     "3+ visualizations, interactive comparisons, team summaries, and documentation."
 )
 
-tabs = st.tabs(["Overview", "EDA", "Player Comparison", "Team Summary", "Missing Data", "Docs"])
+tabs = st.tabs(["Overview", "EDA", "Player Comparison", "Team Summary", "Missing Data"])
 
 # =========================================
 # 3) OVERVIEW (data profile, downloads)
