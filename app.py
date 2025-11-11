@@ -386,44 +386,6 @@ with tabs[4]:
         st.markdown("**Imputation sanity check (mean shift on numeric columns):**")
         st.dataframe(delta)
 
-# =========================================
-# 8) DOCS (self-documenting: maps to rubric)
-# =========================================
-with tabs[5]:
-    st.subheader("Project Docs & Rubric Mapping")
-    st.markdown("""
-**Goal (clear narrative):**  
-Understand which players and teams are most impactful in the 2024–25 season, how shooting efficiency and
-all-around contributions vary across teams and over time, and enable head-to-head comparisons with fair context.
-
-**Data sources (≥2):**  
-1) `nba_player_stats_2425.csv` (game logs / box score–like stats)  
-2) `teams_meta.csv` *(optional)* with `team`, `conference`, `division` (synthesized if not provided)
-
-**Cleaning & Encoding:**  
-- Standardized column names, coerced numeric fields, parsed dates, trimmed strings.  
-- Engineered metrics: `ts_pct`, `efg_pct`, `reb_per_min`.
-
-**EDA (≥3 viz):**  
-- Correlation heatmap (Pearson/Spearman/Kendall).  
-- Distribution (hist + KDE) with optional player filter.  
-- Boxplot by team for a chosen stat (categorical vs continuous encoding).  
-- Time trend line if `date` present.
-
-**Data Processing:**  
-- Missingness table, interactive imputation (mean/median/mode/ffill/bfill).  
-- Simple validation (mean shift) to reason about imputation impact.
-
-**Streamlit App:**  
-- Tabs instead of sidebar; multiple interactive elements (selectboxes, multiselects, sliders, downloads).  
-- Self-documenting **Docs** tab that maps features to rubric.  
-- Download buttons for cleaned and aggregated data.
-
-**Above & Beyond:**  
-- Radar chart for normalized multi-metric player comparison.  
-- Auto team meta merge; engineered efficiency metrics; per-minute rate example; time trends.
-""")
-
 # -------------------------
 # FOOTER
 # -------------------------
