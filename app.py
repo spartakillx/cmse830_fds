@@ -263,21 +263,21 @@ def build_clean_tables():
                 # Championships
                 "championships": ["championships", "rings", "titles", "champion"],
                 # MVPs
-                "mvp": ["mvp", "mvps", "league_mvp", "season_mvp"],
-                "finals_mvp": ["finals_mvp", "fmvp", "finals_mvps"],
+                "mvp": ["mvp", "mvps", "league_mvp", "season_mvp", "nba mvp"],
+                "finals_mvp": ["finals_mvp", "fmvp", "finals_mvps", "finals mvp"],
                 # All-NBA
-                "all_nba_first": ["all_nba_first", "all-nba_first", "all_nba_1st"],
-                "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_2nd"],
-                "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd"],
-                # All-Star
-                "all_star": ["all_star", "allstar", "all_stars", "all-star"],
+                "all_nba_first": ["all_nba_first", "all-nba_first", "all_nba_1st", "all-nba 1st team"],
+                "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_2nd", "all-nba 2nd team"],
+                "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd", "all-nba 3rd team"],
+                # All-Star - FIXED: the actual column name is "All-Star Count"
+                "all_star": ["all_star_count", "all-star count", "all_star", "allstar", "all_stars", "all-star"],
                 # Defense
-                "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards"],
-                "all_defensive_first": ["all_defensive_first", "all-defensive_first", "all_def_1st"],
-                "all_defensive_second": ["all_defensive_second", "all-defensive_second", "all_def_2nd"],
+                "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards", "defensive player of the year"],
+                "all_defensive_first": ["all_defensive_first", "all-defensive_first", "all_def_1st", "all-defense 1st team"],
+                "all_defensive_second": ["all_defensive_second", "all-defensive_second", "all_def_2nd", "all-defense 2nd team"],
                 # Other
-                "roy": ["roy", "rookie_of_the_year"],
-                "scoring_titles": ["scoring_champion", "scoring_titles", "scoring_leader"]
+                "roy": ["roy", "rookie_of_the_year", "rookie of the year"],
+                "scoring_titles": ["scoring_champion", "scoring_titles", "scoring_leader", "scoring champion"]
             }
             
             # Find and standardize columns
@@ -760,10 +760,20 @@ _Research source: Logistic regression analysis of actual HoF inductees_
                     
                     with c3:
                         st.markdown("**Accolades** 🏆")
+                        
+                        # Debug: Show all available accolade columns for this player
+                        accolade_debug = []
                         for col in accolade_cols_available:
                             if col in r.index and pd.notna(r[col]) and r[col] > 0:
                                 label = col.replace("_", " ").title()
                                 st.write(f"{label}: {int(r[col])}")
+                                accolade_debug.append(f"{col}={r[col]}")
+                        
+                        # Show if no accolades found
+                        if not accolade_debug:
+                            st.warning("No accolade data found for this player")
+                            # Show what columns exist
+                            st.caption(f"Available accolade columns: {', '.join(accolade_cols_available) if accolade_cols_available else 'None'}")
                         
                         if "avg_team_win_pct" in r.index and pd.notna(r["avg_team_win_pct"]):
                             st.write(f"Avg Win%: {r['avg_team_win_pct']:.3f}")
