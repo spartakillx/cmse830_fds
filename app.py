@@ -670,7 +670,7 @@ with tabs[4]:
             st.download_button("⬇️ Download regression predictions", data=to_csv_bytes(pred_df), file_name="regression_predictions.csv", mime="text/csv")
 
     st.markdown("---")
-    st.markdown("#### B) Classification: Predict Elite HoF (index ≥ threshold) from production-only features")
+    st.markdown("#### B) Classification: Predict Elite HoF (index >= threshold) from production-only features")
     if hof_clf_df.empty:
         st.warning("HoF classification dataset unavailable.")
     else:
@@ -847,16 +847,16 @@ with tabs[6]:
 - Builds season & career tables; computes an **accolade-driven Hall of Fame Index (0–100)**.
 - Provides **EDA** (heatmap, histogram, line, scatter vs win%), **Player Explorer**, **Comparison**, and a **Modeling** suite:
   - **Regression**: predict team **Win%** from team-season features (Linear Regression, Random Forest).
-  - **Classification**: predict **Elite HoF** (index≥threshold) from production-only features (LogReg, Random Forest).
+  - **Classification**: predict **Elite HoF** (index>=threshold) from production-only features (LogReg, Random Forest).
 
 **Advanced features**
 - Caching (`@st.cache_data`), **session state**, CV, permutation importances, parallel RF (`n_jobs=-1`), downloads.
 
 **Rubric checklist**
 1. **Data**: 3 sources ✅; advanced cleaning (normalization, numeric coercion) ✅; complex joins (name-key fallback, team abbr) ✅  
-2. **EDA**: ≥5 viz types (heatmap/hist/line/scatter/bar) ✅; stats via correlations & distributions ✅  
+2. **EDA**: >=5 viz types (heatmap/hist/line/scatter/bar) ✅; stats via correlations & distributions ✅  
 3. **Feature Engineering**: per-game rates, aggregates, name keys, team abbr mapping ✅  
-4. **Modeling**: ≥2 models on 2 tasks; eval (RMSE/MAE/R2, ConfMat/ROC/F1/AUC), CV, model comparison ✅  
+4. **Modeling**: >=2 models on 2 tasks; eval (RMSE/MAE/R2, ConfMat/ROC/F1/AUC), CV, model comparison ✅  
 5. **Streamlit**: 5+ interactives, docs tab, caching, session state; robust joins + guards ✅  
 6. **GitHub**: Export **README.md** and CSVs from the app; push these with code & data dictionary ✅
 
@@ -887,7 +887,7 @@ with tabs[6]:
 
 ## Modeling
 - **Regression**: Predict team Win% (LinearRegression, RandomForestRegressor). Metrics: RMSE/MAE/R2 + KFold CV.
-- **Classification**: Predict Elite HoF (index≥threshold) using production-only features (LogisticRegression, RandomForestClassifier). Metrics: Accuracy/Precision/Recall/F1/ROC AUC + Stratified KFold CV.
+- **Classification**: Predict Elite HoF (index>=threshold) using production-only features (LogisticRegression, RandomForestClassifier). Metrics: Accuracy/Precision/Recall/F1/ROC AUC + Stratified KFold CV.
 - Importances (permutation / RF) and diagnostics (residuals, ROC, confusion matrix).
 
 ## How to run
