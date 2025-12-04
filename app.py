@@ -264,61 +264,45 @@ def build_merged_data():
             for col in accolades.columns:
                 col_lower = col.lower()
                 
-                # Major Awards (Highest Weight)
+                # MVP
                 if col_lower == "mvp":
                     accolade_map["mvp"] = col
-                elif col_lower == "finals mvp":
+                # Finals MVP
+                elif col_lower == "finals mvp" or col_lower == "finals_mvp":
                     accolade_map["finals_mvp"] = col
+                # Championships
                 elif col_lower == "championships":
                     accolade_map["championships"] = col
-                
-                # All-Star & Team Selections
+                # All-Star (exact match)
                 elif col_lower == "all star":
                     accolade_map["all_star"] = col
-                elif col_lower == "all nba":
-                    accolade_map["all_nba"] = col
-                elif col_lower == "all aba":
-                    accolade_map["all_aba"] = col
-                elif col_lower == "all rookie":
-                    accolade_map["all_rookie"] = col
-                elif col_lower == "all defensive":
-                    accolade_map["all_defensive"] = col
-                
-                # Defensive Awards
+                # DPOY
                 elif col_lower == "dpoy":
                     accolade_map["dpoy"] = col
-                
-                # Individual Honors
+                # All-NBA
+                elif col_lower == "all nba":
+                    accolade_map["all_nba"] = col
+                # All-Defense
+                elif col_lower == "all defensive":
+                    accolade_map["all_defensive"] = col
+                # ROY
                 elif col_lower == "roy":
                     accolade_map["roy"] = col
+                # AS MVP (All-Star Game MVP)
                 elif col_lower == "as mvp":
                     accolade_map["as_mvp"] = col
+                # Conference Finals MVP
                 elif col_lower == "cf mvp":
                     accolade_map["cf_mvp"] = col
-                
-                # Statistical Championships
+                # Scoring Champion
                 elif col_lower == "scoring champ":
                     accolade_map["scoring_champ"] = col
-                elif col_lower == "ast champ":
-                    accolade_map["ast_champ"] = col
-                elif col_lower == "trb champ":
-                    accolade_map["trb_champ"] = col
-                elif col_lower == "stl champ":
-                    accolade_map["stl_champ"] = col
-                elif col_lower == "blk champ":
-                    accolade_map["blk_champ"] = col
-                
-                # Role Player Awards
+                # Most Improved
                 elif col_lower == "most improved":
                     accolade_map["most_improved"] = col
+                # Sixth Man
                 elif col_lower == "sixth man":
                     accolade_map["sixth_man"] = col
-                
-                # Legacy Honors
-                elif col_lower == "nba 75 team":
-                    accolade_map["nba_75"] = col
-                elif col_lower == "aba all-time team":
-                    accolade_map["aba_alltime"] = col
             
             if accolade_map:
                 st.info(f"🏆 Found {len(accolade_map)} accolades: {accolade_map}")
