@@ -93,15 +93,6 @@ streamlit run app.py
 - `@st.cache_data` used to cache data loads & feature tables  
 - Download buttons export model predictions and curated career tables (with HoF Index)
 
----
-
-## Rubric Alignment (at a glance)
-- **Data**: 3 sources; advanced cleaning; complex joins (name_key fallback + abbr mapping)  
-- **EDA**: ≥5 visualization types; statistical summaries; trend lines  
-- **Feature Engineering**: per-game rates, aggregates, name keys, team mapping, HoF contributions  
-- **Modeling**: 2 tasks × 2 models; metrics, CV, comparisons, feature importances  
-- **Streamlit**: ≥5 interactive controls; caching; session state; CSV exports; robust UX  
-- **Documentation**: This README + in-app labels and diagnostics
 
 ---
 
