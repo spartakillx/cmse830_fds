@@ -63,7 +63,6 @@ def extract_season_start_from_string(season_value):
     if pd.isna(season_value):
         return np.nan
     s = str(season_value)
-    # take first 4 consecutive digits
     digits = "".join([ch for ch in s if ch.isdigit()])
     if len(digits) < 4:
         return np.nan
@@ -101,12 +100,11 @@ def attach_season_start(df: pd.DataFrame) -> pd.DataFrame:
 def filter_to_modern_era(df: pd.DataFrame) -> pd.DataFrame:
     """
     Keep rows with season_start >= SEASON_START_YEAR when that column is usable.
-    If not usable (all NaN), return df unchanged so we never wipe out all rows.
+    If not usable, return df unchanged.
     """
     if "season_start" not in df.columns:
         return df
     if not df["season_start"].notna().any():
-        # nothing usable, don't filter
         return df
     return df[df["season_start"] >= SEASON_START_YEAR].copy()
 
@@ -142,7 +140,7 @@ def load_players_season_stats() -> pd.DataFrame:
 def load_traditional_box() -> pd.DataFrame:
     """
     Dataset 2: szymonjwiak/nba-traditional
-    Game/season level 'traditional' stats – extra EDA.
+    Game/season level 'traditional' stats.
     """
     df = download_first_csv("szymonjwiak/nba-traditional")
     df = normalize_columns(df)
@@ -229,12 +227,10 @@ def build_merged_data():
     if "g" in merged.columns:
         agg_dict["games"] = ("g", "sum")
 
-    # core counting stats if present
     for stat in ["g", "mp", "pts", "trb", "ast", "stl", "blk", "tov"]:
         if stat in merged.columns:
             agg_dict[f"tot_{stat}"] = (stat, "sum")
 
-    # rate/advanced stats
     for stat in ["per", "ws", "bpm"]:
         if stat in merged.columns:
             agg_dict[f"avg_{stat}"] = (stat, "mean")
@@ -273,7 +269,6 @@ def build_merged_data():
         raw_score = pd.Series(0, index=career.index)
 
     career["hof_score_raw"] = raw_score
-    # percentile-based probability-like value
     if len(career) > 0:
         career["hof_prob"] = career["hof_score_raw"].rank(pct=True)
     else:
@@ -392,7 +387,7 @@ with tabs[2]:
     if "player_name" not in career_df.columns or career_df.empty:
         st.info("Career table is empty or missing player_name.")
     else:
-        players = sorted(career_df["player_name"].dropna().unique())
+        players = sorted(career_df["player_name"].dropna().unique())  # full list
         if len(players) < 2:
             st.info("Not enough players in career table.")
         else:
@@ -491,19 +486,30 @@ with tabs[4]:
     if career_df.empty:
         st.info("Career table is empty – check that player-season data loaded correctly.")
     else:
-        top_n = st.slider("Show top N players", min_value=10, max_value=200, value=50, step=10)
+        max_slider = int(max(10, len(career_df)))  # allow up to all players
+        top_n = st.slider(
+            "Show top N players",
+            min_value=10,
+            max_value=max_slider,
+            value=min(50, max_slider),
+            step=10
+        )
+
         st.markdown(f"**Top {top_n} players by HoF probability**")
         st.dataframe(
             career_df.sort_values("hof_prob", ascending=False).head(top_n)
         )
 
+        # full list of players in dropdown
         players = sorted(career_df["player_name"].dropna().unique())
         sel = st.selectbox("Inspect a player", players, key="hof_player")
         row = career_df[career_df["player_name"] == sel]
 
         if not row.empty:
             r = row.iloc[0]
-            st.markdown(f"### {sel}")
+
+            st.markdown(f"## {sel}")
+
             seasons_val = r.get("seasons", np.nan)
             games_val = r.get("games", np.nan)
             if pd.notna(seasons_val):
@@ -519,13 +525,17 @@ with tabs[4]:
             if "avg_team_win_pct" in r and pd.notna(r["avg_team_win_pct"]):
                 st.write(f"Average team win%: {r['avg_team_win_pct']:.3f}")
 
-            if "hof_prob" in r and pd.notna(r["hof_prob"]):
-                st.markdown(f"### Estimated HoF probability: **{r['hof_prob']:.3f}**")
+            # --- CLEAR HoF probability display ---
+            hof_prob = float(r.get("hof_prob", np.nan))
+            if not np.isnan(hof_prob):
+                pct = hof_prob * 100
+                st.markdown(f"### Estimated HoF probability (relative to dataset): **{pct:.1f}%**")
+
                 fig, ax = plt.subplots(figsize=(6, 1.2))
-                ax.barh([0], [r["hof_prob"]], height=0.4)
+                ax.barh([0], [hof_prob], height=0.4)
                 ax.set_xlim(0, 1)
                 ax.set_yticks([])
-                ax.set_xlabel("HoF probability (relative)")
+                ax.set_xlabel("HoF probability (0–1)")
                 st.pyplot(fig)
 
 
