@@ -690,7 +690,8 @@ across *all players in the dataset*. Higher = more Hall-of-Fame-like profile.
             career_filtered = career_filtered.sort_values("hof_index", ascending=False)
         
         st.write
-        if len(career_filtered) == 0:
+        
+          if len(career_filtered) == 0:
         st.warning("No players match filters. Lower the thresholds.")
     else:
         # Top N
