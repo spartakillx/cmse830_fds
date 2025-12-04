@@ -257,9 +257,12 @@ def build_clean_tables():
     # --------------------------------------------------
     # Build the aggregation dict dynamically based on what columns exist
     career_agg_dict = {
-        "year": ["min", "max", "nunique"],
-        "games": "sum" if "games" in season_merged.columns else "size"
+        "year": ["min", "max", "nunique"]
     }
+    
+    # Add games column if it exists
+    if "games" in season_merged.columns:
+        career_agg_dict["games"] = "sum"
     
     # Add stat columns if they exist
     for stat_col in ["pts", "reb", "ast", "stl", "blk", "tov"]:
@@ -275,17 +278,19 @@ def build_clean_tables():
     
     # Flatten multi-level columns and rename
     if isinstance(career_from_box.columns, pd.MultiIndex):
-        career_from_box.columns = ['_'.join(col).strip('_') if col[1] else col[0] 
+        career_from_box.columns = ['_'.join(str(c) for c in col).strip('_') if col[1] else col[0] 
                                     for col in career_from_box.columns.values]
     
     # Rename columns to standard names
     rename_dict = {
         "year_min": "from_year",
         "year_max": "to_year",
-        "year_nunique": "seasons",
-        "games_sum": "games",
-        "games_size": "games",
+        "year_nunique": "seasons"
     }
+    
+    # Add games rename if it exists
+    if "games_sum" in career_from_box.columns:
+        rename_dict["games_sum"] = "games"
     
     # Add stat renames
     for stat in ["pts", "reb", "ast", "stl", "blk", "tov"]:
@@ -296,6 +301,10 @@ def build_clean_tables():
         rename_dict["win_pct_mean"] = "avg_team_win_pct"
     
     career_from_box = career_from_box.rename(columns=rename_dict)
+    
+    # If games column doesn't exist, create it from counting seasons
+    if "games" not in career_from_box.columns:
+        career_from_box["games"] = 0
 
     # Merge extra career info from players dataset if names align
     if "player_name" in career.columns:
