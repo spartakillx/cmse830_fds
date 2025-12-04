@@ -690,3 +690,117 @@ across *all players in the dataset*. Higher = more Hall-of-Fame-like profile.
             career_filtered = career_filtered.sort_values("hof_index", ascending=False)
         
         st.write
+        if len(career_filtered) == 0:
+        st.warning("No players match filters. Lower the thresholds.")
+    else:
+        # Top N
+        max_slider = max(10, len(career_filtered))
+        top_n = st.slider("Show top N", 10, min(200, max_slider), min(50, max_slider), 10)
+
+        st.markdown(f"### Top {top_n} players by HoF Index")
+        
+        display_cols = [c for c in [
+            "player_name", "from_year", "to_year", "seasons", "games",
+            "tot_pts", "tot_reb", "tot_ast", "avg_team_win_pct", "hof_index"
+        ] if c in career_filtered.columns]
+        
+        if display_cols:
+            top_players = career_filtered[display_cols].head(top_n).copy()
+            if "hof_index" in top_players.columns:
+                top_players["hof_index"] = top_players["hof_index"].round(1)
+            st.dataframe(top_players, use_container_width=True)
+        else:
+            st.error("No display columns available")
+
+    # Player inspector
+    st.markdown("---")
+    st.markdown("### Inspect individual player")
+    
+    if "player_name" in career_df.columns:
+        all_players = sorted(career_df["player_name"].dropna().unique())
+        
+        if all_players:
+            sel = st.selectbox(f"Select from ALL {len(all_players):,} players", all_players, key="hof_pl")
+            
+            row = career_df[career_df["player_name"] == sel]
+            if not row.empty:
+                r = row.iloc[0]
+                
+                st.markdown(f"## {sel}")
+                
+                c1, c2, c3 = st.columns(3)
+                
+                with c1:
+                    st.markdown("**Career Overview**")
+                    if "from_year" in r.index and pd.notna(r["from_year"]):
+                        st.write(f"From: {int(r['from_year'])}")
+                    if "to_year" in r.index and pd.notna(r["to_year"]):
+                        st.write(f"To: {int(r['to_year'])}")
+                    if "seasons" in r.index and pd.notna(r["seasons"]):
+                        st.write(f"Seasons: {int(r['seasons'])}")
+                    if "games" in r.index and pd.notna(r["games"]):
+                        st.write(f"Games: {int(r['games']):,}")
+                
+                with c2:
+                    st.markdown("**Career Totals**")
+                    if "tot_pts" in r.index and pd.notna(r["tot_pts"]):
+                        st.write(f"Points: {int(r['tot_pts']):,}")
+                    if "tot_reb" in r.index and pd.notna(r["tot_reb"]):
+                        st.write(f"Rebounds: {int(r['tot_reb']):,}")
+                    if "tot_ast" in r.index and pd.notna(r["tot_ast"]):
+                        st.write(f"Assists: {int(r['tot_ast']):,}")
+                
+                with c3:
+                    st.markdown("**Team Success**")
+                    if "avg_team_win_pct" in r.index and pd.notna(r["avg_team_win_pct"]):
+                        st.write(f"Avg team win%: {r['avg_team_win_pct']:.3f}")
+                
+                # HoF Index
+                hof_idx = float(r.get("hof_index", 0.0))
+                st.markdown(f"### Hall of Fame Index: **{hof_idx:.1f} / 100**")
+                
+                if hof_idx >= 95:
+                    verdict = "🏆 Elite / Inner-circle HoF"
+                    color = "green"
+                elif hof_idx >= 85:
+                    verdict = "⭐ Strong HoF candidate"
+                    color = "blue"
+                elif hof_idx >= 70:
+                    verdict = "🎯 Borderline HoF"
+                    color = "orange"
+                elif hof_idx >= 50:
+                    verdict = "✅ Solid career"
+                    color = "gray"
+                else:
+                    verdict = "📊 Role player"
+                    color = "lightgray"
+                
+                st.markdown(f"**{verdict}**")
+                
+                fig, ax = plt.subplots(figsize=(8, 1.5))
+                ax.barh([0], [hof_idx], height=0.5, color=color)
+                ax.set_xlim(0, 100)
+                ax.set_ylim(-0.5, 0.5)
+                ax.set_yticks([])
+                ax.set_xlabel("HoF Index (0-100)")
+                ax.set_title(f"{sel} - HoF Index")
+                ax.axvline(x=50, color='gray', linestyle='--', alpha=0.3)
+                ax.axvline(x=85, color='blue', linestyle='--', alpha=0.3)
+                ax.axvline(x=95, color='green', linestyle='--', alpha=0.3)
+                st.pyplot(fig)
+    else:
+        st.error("player_name column not found")
+
+# Download
+st.markdown("---")
+st.markdown("### Download cleaned career-level table")
+
+def to_csv_bytes(df_in: pd.DataFrame) -> bytes:
+    return df_in.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    "⬇️ Download career table with HoF Index",
+    data=to_csv_bytes(career_df),
+    file_name="career_with_hof_index.csv",
+    mime="text/csv"
+)</parameter>
