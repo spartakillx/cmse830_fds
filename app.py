@@ -367,6 +367,10 @@ def build_merged_data():
     career["hof_score_raw"] = pd.to_numeric(career["hof_score_raw"], errors="coerce").fillna(0.0)
 
     if len(career) > 0:
+        # Debug: Check score distribution
+        st.write(f"**HoF Score Debug:** Min={career['hof_score_raw'].min():.2f}, Max={career['hof_score_raw'].max():.2f}, Mean={career['hof_score_raw'].mean():.2f}")
+        st.write(f"Unique scores: {career['hof_score_raw'].nunique()}")
+        
         # Convert to 0-100 percentile scale
         career["hof_index"] = (career["hof_score_raw"].rank(pct=True, method="average") * 100).round(1)
     else:
