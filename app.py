@@ -35,8 +35,8 @@ from sklearn.metrics import (
 from sklearn.inspection import permutation_importance
 
 # ------------------------- PAGE -------------------------
-st.set_page_config(page_title="NBA Analytics + HoF Index + Modeling", page_icon="🏀", layout="wide")
-st.title("NBA Analytics & Hall of Fame Index Dashboard (Accolade-Driven + Modeling)")
+st.set_page_config(page_title="NBA Analytics & Hall of Fame Index Dashboard", page_icon="🏀", layout="wide")
+st.title("NBA Analytics & Hall of Fame Index Dashboard)")
 st.caption("Sources: szymonjwiak/nba-traditional • boonpalipatana/nba-season-records-from-every-year • ryanschubertds/all-nba-aba-players-bio-stats-accolades")
 
 # ------------------------- SESSION -------------------------
