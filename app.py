@@ -377,42 +377,20 @@ def build_merged_data():
         career["hof_score_raw"] += 0.6 * (career["avg_team_win_pct"] - 0.5) * 2.0
 
     # Accolades (heavily weighted if available)
-    # Research-backed weights based on HoF voting patterns
     accolade_weights = {
-        # Tier 1: MVP-Level Awards (Highest Impact)
-        "mvp": 20.0,              # NBA MVP - Most important predictor
-        "finals_mvp": 15.0,       # Finals MVP - 2nd most important
-        "championships": 10.0,     # Championships/Rings - Critical for HoF
-        
-        # Tier 2: Elite Individual Recognition
-        "dpoy": 6.0,              # Defensive Player of the Year
-        "all_nba": 3.0,           # All-NBA selections (combined)
-        "all_aba": 2.5,           # All-ABA selections (combined)
-        
-        # Tier 3: All-Star & Consistent Excellence
-        "all_star": 2.0,          # All-Star selections
-        "all_defensive": 1.5,     # All-Defensive selections
-        "all_rookie": 0.8,        # All-Rookie team
-        
-        # Tier 4: Statistical Dominance
-        "scoring_champ": 2.5,     # Scoring titles - high value
-        "ast_champ": 2.0,         # Assist titles
-        "trb_champ": 1.8,         # Rebound titles
-        "blk_champ": 1.5,         # Block titles
-        "stl_champ": 1.5,         # Steal titles
-        
-        # Tier 5: Secondary MVP Awards
-        "as_mvp": 1.2,            # All-Star Game MVP
-        "cf_mvp": 1.0,            # Conference Finals MVP
-        "roy": 1.5,               # Rookie of the Year
-        
-        # Tier 6: Role Player Excellence
-        "sixth_man": 0.8,         # Sixth Man Award
-        "most_improved": 0.6,     # Most Improved Player
-        
-        # Tier 7: Legacy Honors (Recognition, not achievement)
-        "nba_75": 3.0,            # NBA 75th Anniversary Team
-        "aba_alltime": 2.0        # ABA All-Time Team
+        "mvp": 15.0,
+        "finals_mvp": 12.0,
+        "championships": 8.0,
+        "dpoy": 5.0,
+        "all_nba": 3.0,  # Combined All-NBA
+        "all_star": 2.0,
+        "all_defensive": 1.5,  # Combined All-Defense
+        "roy": 1.5,
+        "as_mvp": 1.0,  # All-Star Game MVP
+        "cf_mvp": 1.0,  # Conference Finals MVP
+        "scoring_champ": 1.5,
+        "most_improved": 0.5,
+        "sixth_man": 0.5
     }
     
     for accolade, weight in accolade_weights.items():
@@ -636,31 +614,16 @@ with tabs[4]:
 - Longevity (seasons, games)
 - Team success (average win%)
 
-**Accolades (research-backed weights):**
-
-**Tier 1 - MVP Awards:**
-{f"- 🏆 MVP (20x weight)" if "mvp" in accolade_cols else ""}
-{f"- 🏆 Finals MVP (15x weight)" if "finals_mvp" in accolade_cols else ""}
-{f"- 💍 Championships (10x weight)" if "championships" in accolade_cols else ""}
-
-**Tier 2 - Elite Recognition:**
-{f"- 🛡️ DPOY (6x weight)" if "dpoy" in accolade_cols else ""}
+**Accolades (if available):**
+{f"- 🏆 MVP (15x weight)" if "mvp" in accolade_cols else ""}
+{f"- 🏆 Finals MVP (12x weight)" if "finals_mvp" in accolade_cols else ""}
+{f"- 💍 Championships (8x weight)" if "championships" in accolade_cols else ""}
+{f"- 🛡️ DPOY (5x weight)" if "dpoy" in accolade_cols else ""}
 {f"- ⭐ All-NBA (3x weight)" if "all_nba" in accolade_cols else ""}
-{f"- ⭐ All-ABA (2.5x weight)" if "all_aba" in accolade_cols else ""}
-
-**Tier 3 - Consistent Excellence:**
 {f"- 🌟 All-Star (2x weight)" if "all_star" in accolade_cols else ""}
 {f"- 🛡️ All-Defense (1.5x weight)" if "all_defensive" in accolade_cols else ""}
-
-**Tier 4 - Statistical Dominance:**
-{f"- 🎯 Scoring Titles (2.5x)" if "scoring_champ" in accolade_cols else ""}
-{f"- 🎯 Assist/Rebound/Block/Steal Titles (2x/1.8x/1.5x/1.5x)" if any(c in accolade_cols for c in ["ast_champ", "trb_champ", "blk_champ", "stl_champ"]) else ""}
-
-**Other Awards:**
-{f"- 🆕 ROY, All-Rookie" if any(c in accolade_cols for c in ["roy", "all_rookie"]) else ""}
-{f"- ⭐ All-Star Game MVP, Conf Finals MVP" if any(c in accolade_cols for c in ["as_mvp", "cf_mvp"]) else ""}
-{f"- 📈 Sixth Man, Most Improved" if any(c in accolade_cols for c in ["sixth_man", "most_improved"]) else ""}
-{f"- 🏅 NBA 75 Team, ABA All-Time Team" if any(c in accolade_cols for c in ["nba_75", "aba_alltime"]) else ""}
+{f"- 🆕 ROY (1.5x weight)" if "roy" in accolade_cols else ""}
+{f"- 🎯 Scoring Titles (1.5x weight)" if "scoring_champ" in accolade_cols else ""}
 
 **Scale:**
 - **95+**: Elite / Inner-circle HoF
@@ -762,40 +725,19 @@ with tabs[4]:
                 # Show accolades if available
                 st.markdown("**🏆 Accolades**")
                 accolade_display = {
-                    # Major Awards
-                    "mvp": "🏆 MVP",
-                    "finals_mvp": "🏆 Finals MVP", 
-                    "championships": "💍 Championships",
-                    
-                    # All-Star & Teams
-                    "all_star": "🌟 All-Star",
-                    "all_nba": "⭐ All-NBA",
-                    "all_aba": "⭐ All-ABA",
-                    "all_rookie": "🆕 All-Rookie",
-                    "all_defensive": "🛡️ All-Defense",
-                    
-                    # Defensive
-                    "dpoy": "🛡️ DPOY",
-                    
-                    # Individual Honors
-                    "roy": "🆕 ROY",
-                    "as_mvp": "⭐ AS Game MVP",
-                    "cf_mvp": "🏅 Conf Finals MVP",
-                    
-                    # Statistical Titles
-                    "scoring_champ": "🎯 Scoring Titles",
-                    "ast_champ": "🎯 Assist Titles",
-                    "trb_champ": "🎯 Rebound Titles",
-                    "stl_champ": "🎯 Steal Titles",
-                    "blk_champ": "🎯 Block Titles",
-                    
-                    # Role Awards
-                    "most_improved": "📈 MIP",
-                    "sixth_man": "🔄 6th Man",
-                    
-                    # Legacy
-                    "nba_75": "🏅 NBA 75",
-                    "aba_alltime": "🏅 ABA All-Time"
+                    "mvp": "MVP",
+                    "finals_mvp": "Finals MVP", 
+                    "championships": "Championships",
+                    "all_star": "All-Star",
+                    "dpoy": "DPOY",
+                    "all_nba": "All-NBA",
+                    "all_defensive": "All-Defense",
+                    "roy": "ROY",
+                    "as_mvp": "All-Star Game MVP",
+                    "cf_mvp": "Conf Finals MVP",
+                    "scoring_champ": "Scoring Titles",
+                    "most_improved": "Most Improved",
+                    "sixth_man": "Sixth Man"
                 }
                 
                 accolades_shown = False
