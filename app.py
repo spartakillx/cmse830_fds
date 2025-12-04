@@ -843,7 +843,7 @@ with tabs[6]:
     st.markdown("""
 **What this app does**
 - Integrates **three Kaggle datasets** (boxscores, team records, accolades).
-- Cleans/standardizes names, seasons, and **normalizes team names → abbreviations** for correct joins.
+- Cleans/standardizes names, seasons, and **normalizes team names - abbreviations** for correct joins.
 - Builds season & career tables; computes an **accolade-driven Hall of Fame Index (0–100)**.
 - Provides **EDA** (heatmap, histogram, line, scatter vs win%), **Player Explorer**, **Comparison**, and a **Modeling** suite:
   - **Regression**: predict team **Win%** from team-season features (Linear Regression, Random Forest).
@@ -870,14 +870,14 @@ with tabs[6]:
     readme = # NBA Analytics & HoF Index (Accolade-Driven)
 
 ## Data
-- szymonjwiak/nba-traditional (player boxscores, season_id → year)
+- szymonjwiak/nba-traditional (player boxscores, season_id - year)
 - boonpalipatana/nba-season-records-from-every-year (team wins/losses - win_pct; normalized to abbreviations)
 - ryanschubertds/all-nba-aba-players-bio-stats-accolades (awards; standardized + name-key fallback)
 
 ## Cleaning & Integration
 - Name normalization + canonical `name_key` (first + last, suffix removed).
-- Team names → abbreviations to join boxscores with team records.
-- Season parsing (e.g., "2016-17" → 2016).
+- Team names - abbreviations to join boxscores with team records.
+- Season parsing (e.g., "2016-17" - 2016).
 - Accolade standardization + totals (All-NBA, All-Defense).
 
 ## Feature Engineering
