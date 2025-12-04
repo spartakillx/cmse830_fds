@@ -97,17 +97,22 @@ def load_all_raw():
 def build_clean_tables():
     players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw = load_all_raw()
 
-    # Normalize column names
+    # -------------------------
+    # PLAYERS (career-ish table)
+    # -------------------------
     players = players_raw.copy()
     players.columns = players.columns.str.strip().str.lower()
 
+    # -------------------------
+    # BOXSCORES  → season_df
+    # -------------------------
     box = boxscores_raw.copy()
     box.columns = box.columns.str.strip().str.lower()
 
     seasons = seasons_raw.copy()
     seasons.columns = seasons.columns.str.strip().str.lower()
 
-    # Career-level table
+    # Career-level from players_raw
     career = players.copy()
 
     if "player" in career.columns and "player_name" not in career.columns:
@@ -158,7 +163,7 @@ def build_clean_tables():
     if "season" in box.columns and "player_name" in box.columns:
         box = box.dropna(subset=["season", "player_name"])
 
-    # Convert season to year
+    # Convert season to starting year (e.g. "2004-05" → 2004)
     if "season" in box.columns:
         def season_to_year(x):
             try:
@@ -166,7 +171,7 @@ def build_clean_tables():
                 if "-" in s:
                     return int(s.split("-")[0])
                 return int(s)
-            except:
+            except Exception:
                 return np.nan
         
         box["season_start"] = box["season"].apply(season_to_year)
@@ -191,28 +196,85 @@ def build_clean_tables():
     else:
         season_player = pd.DataFrame(columns=["year", "player_name", "team"])
 
-    # Team records
-    if "season" in seasons.columns:
+    # --------------------------------------------------
+    # TEAM RECORDS (FIXED win% so the plot shows)
+    # --------------------------------------------------
+    # Standardise columns
+    # year column
+    if "season" in seasons.columns and "year" not in seasons.columns:
         seasons = seasons.rename(columns={"season": "year"})
-    if "team_name" in seasons.columns:
-        seasons = seasons.rename(columns={"team_name": "team"})
-    if "win%" in seasons.columns:
-        seasons = seasons.rename(columns={"win%": "win_pct"})
+    if "season_start" in seasons.columns and "year" not in seasons.columns:
+        seasons = seasons.rename(columns={"season_start": "year"})
 
+    # team column
+    if "team_name" in seasons.columns and "team" not in seasons.columns:
+        seasons = seasons.rename(columns={"team_name": "team"})
+    elif "franchise" in seasons.columns and "team" not in seasons.columns:
+        seasons = seasons.rename(columns={"franchise": "team"})
+
+    # wins / losses
+    if "wins" not in seasons.columns:
+        for cand in ["w", "win", "wins_total"]:
+            if cand in seasons.columns:
+                seasons = seasons.rename(columns={cand: "wins"})
+                break
+
+    if "losses" not in seasons.columns:
+        for cand in ["l", "loss", "losses_total"]:
+            if cand in seasons.columns:
+                seasons = seasons.rename(columns={cand: "losses"})
+                break
+
+    # Derive win_pct
+    if "win_pct" not in seasons.columns:
+        pct_col = None
+        for cand in ["win%", "w/l%", "pct", "w/l%"]:
+            if cand in seasons.columns:
+                pct_col = cand
+                break
+
+        if pct_col is not None:
+            seasons["win_pct"] = pd.to_numeric(seasons[pct_col], errors="coerce")
+        elif "wins" in seasons.columns and "losses" in seasons.columns:
+            w = pd.to_numeric(seasons["wins"], errors="coerce")
+            l = pd.to_numeric(seasons["losses"], errors="coerce")
+            seasons["win_pct"] = w / (w + l)
+
+    # Clean numerics
     for c in ["year", "wins", "losses", "win_pct"]:
         if c in seasons.columns:
             seasons[c] = pd.to_numeric(seasons[c], errors="coerce")
 
+    # Convert season strings like "2004-05" → 2004 if needed
+    if "year" in seasons.columns and seasons["year"].dtype == object:
+        def season_to_year2(x):
+            try:
+                s = str(x)
+                if "-" in s:
+                    return int(s.split("-")[0])
+                return int(s)
+            except Exception:
+                return np.nan
+
+        seasons["year"] = seasons["year"].apply(season_to_year2)
+
     if "year" in seasons.columns:
+        seasons = seasons.dropna(subset=["year"])
+        seasons["year"] = seasons["year"].astype(int)
         seasons = seasons[seasons["year"] >= 2005]
 
-    team_cols = [c for c in ["year", "team", "win_pct"] if c in seasons.columns]
-    team_seasons = seasons[team_cols].drop_duplicates()
+    # Final team_seasons table with year, team, win_pct
+    if all(col in seasons.columns for col in ["year", "team", "win_pct"]):
+        team_seasons = seasons[["year", "team", "win_pct"]].drop_duplicates()
+    else:
+        team_seasons = pd.DataFrame(columns=["year", "team", "win_pct"])
 
-    # Merge team win%
+    # Merge team win% into player-season data
     season_merged = season_player.merge(team_seasons, on=["year", "team"], how="left")
 
-    # Build career from season data
+    # --------------------------------------------------
+    # BUILD CAREER TABLE FROM SEASON DATA
+    # --------------------------------------------------
     career_agg_dict = {}
     if "year" in season_merged.columns:
         career_agg_dict["from_year"] = ("year", "min")
@@ -269,7 +331,7 @@ def build_clean_tables():
                 "all_nba_first": ["all_nba_first", "all-nba_first", "all_nba_1st", "all-nba 1st team"],
                 "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_2nd", "all-nba 2nd team"],
                 "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd", "all-nba 3rd team"],
-                # All-Star - FIXED: the actual column name is "All-Star Count"
+                # All-Star (dataset has "All-Star Count")
                 "all_star": ["all_star_count", "all-star count", "all_star", "allstar", "all_stars", "all-star"],
                 # Defense
                 "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards", "defensive player of the year"],
@@ -291,15 +353,14 @@ def build_clean_tables():
             accolades = accolades.rename(columns=standardized_cols)
             
             # Aggregate accolades per player
-            agg_dict = {}
+            agg_dict_awards = {}
             for accolade in accolade_mappings.keys():
                 if accolade in accolades.columns:
-                    # Convert to numeric first
                     accolades[accolade] = pd.to_numeric(accolades[accolade], errors="coerce").fillna(0)
-                    agg_dict[accolade] = "sum"
+                    agg_dict_awards[accolade] = "sum"
             
-            if agg_dict:
-                awards_career = accolades.groupby("player_name", as_index=False).agg(agg_dict)
+            if agg_dict_awards:
+                awards_career = accolades.groupby("player_name", as_index=False).agg(agg_dict_awards)
                 
                 # Combine All-NBA into total count
                 allnba_cols = ["all_nba_first", "all_nba_second", "all_nba_third"]
@@ -384,7 +445,7 @@ def add_hof_index_with_accolades(career: pd.DataFrame) -> pd.DataFrame:
     accolade_weights = {
         "mvp": 15.0,                      # NBA MVP - Most important!
         "finals_mvp": 12.0,               # Finals MVP - 2nd most important
-        "championships": 8.0,              # Championships/Rings
+        "championships": 8.0,             # Championships/Rings
         "dpoy": 5.0,                      # Defensive Player of the Year
         "all_nba_first": 4.0,             # All-NBA First Team
         "all_nba_total": 2.5,             # All-NBA (any team)
@@ -544,7 +605,7 @@ with tabs[1]:
     st.markdown("---")
     st.markdown("### Team win% over seasons")
 
-    if "year" in team_df.columns and "win_pct" in team_df.columns and "team" in team_df.columns:
+    if "year" in team_df.columns and "win_pct" in team_df.columns and "team" in team_df.columns and not team_df.empty:
         team_list = sorted(team_df["team"].dropna().unique())
         if team_list:
             sel_team = st.selectbox("Choose a team", team_list)
@@ -555,6 +616,8 @@ with tabs[1]:
             ax.set_ylabel("Win%")
             ax.set_title(f"{sel_team} – win% over time")
             st.pyplot(fig)
+    else:
+        st.warning("Team win% data not available (missing year/team/win_pct).")
 
 # TAB 3: PLAYER EXPLORER
 with tabs[2]:
@@ -749,7 +812,10 @@ _Research source: Logistic regression analysis of actual HoF inductees_
                         st.markdown("**Career Overview**")
                         for col in ["from_year", "to_year", "seasons", "games"]:
                             if col in r.index and pd.notna(r[col]):
-                                val = int(r[col]) if col != "games" else f"{int(r[col]):,}"
+                                if col == "games":
+                                    val = f"{int(r[col]):,}"
+                                else:
+                                    val = int(r[col])
                                 st.write(f"{col.replace('_', ' ').title()}: {val}")
                     
                     with c2:
@@ -761,7 +827,6 @@ _Research source: Logistic regression analysis of actual HoF inductees_
                     with c3:
                         st.markdown("**Accolades** 🏆")
                         
-                        # Debug: Show all available accolade columns for this player
                         accolade_debug = []
                         for col in accolade_cols_available:
                             if col in r.index and pd.notna(r[col]) and r[col] > 0:
@@ -769,10 +834,8 @@ _Research source: Logistic regression analysis of actual HoF inductees_
                                 st.write(f"{label}: {int(r[col])}")
                                 accolade_debug.append(f"{col}={r[col]}")
                         
-                        # Show if no accolades found
                         if not accolade_debug:
                             st.warning("No accolade data found for this player")
-                            # Show what columns exist
                             st.caption(f"Available accolade columns: {', '.join(accolade_cols_available) if accolade_cols_available else 'None'}")
                         
                         if "avg_team_win_pct" in r.index and pd.notna(r["avg_team_win_pct"]):
