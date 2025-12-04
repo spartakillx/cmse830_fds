@@ -5,10 +5,16 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import os
-import kagglehub
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+# Import datasets from kagglehub at module level
+import kagglehub
+
+# Download datasets
+players_path = kagglehub.dataset_download("drgilermo/nba-players-stats")
+boxscores_path = kagglehub.dataset_download("szymonjwiak/nba-traditional")
+seasons_path = kagglehub.dataset_download("boonpalipatana/nba-season-records-from-every-year")
 
 # --------------------------------------------------
 # PAGE CONFIG
@@ -23,46 +29,45 @@ st.title("🏀 NBA Analytics & Hall of Fame Index Dashboard")
 
 st.markdown(
     """
-This app combines **multiple NBA datasets** (boxscores, team season records, and player stats)
-to build:
+This app analyzes NBA player and team data to build:
 
 - Season & team-level exploration  
 - Player comparison and trends  
-- A **Hall of Fame Index (0–100)** that scores every player's career based on
-  longevity, production, and team success.  
+- A **Hall of Fame Index (0–100)** based on career stats: longevity, production, and team success
 
-_Data sources: Kaggle – `drgilermo/nba-players-stats`, `szymonjwiak/nba-traditional`,
-`boonpalipatana/nba-season-records-from-every-year`._
+_Data sources: Kaggle NBA datasets_
 """
 )
 
 # --------------------------------------------------
-# HELPER: generic Kaggle loader
+# LOAD DATA FROM DOWNLOADED PATHS
 # --------------------------------------------------
-def load_kaggle_csv(dataset_id: str) -> pd.DataFrame:
-    """Download a Kaggle dataset with kagglehub and return the first CSV found."""
-    path = kagglehub.dataset_download(dataset_id)
-    files = [f for f in os.listdir(path) if f.lower().endswith(".csv")]
-    if not files:
-        raise FileNotFoundError(f"No CSV files found in Kaggle dataset {dataset_id}")
-    csv_path = os.path.join(path, files[0])
-    return pd.read_csv(csv_path)
-
+import os
 
 @st.cache_data(show_spinner=True)
 def load_all_raw():
-    """Load all three raw datasets from Kaggle."""
-    players_raw = load_kaggle_csv("drgilermo/nba-players-stats")
-    boxscores_raw = load_kaggle_csv("szymonjwiak/nba-traditional")
-    seasons_raw = load_kaggle_csv("boonpalipatana/nba-season-records-from-every-year")
+    """Load CSV files from kagglehub downloaded paths."""
+    # Find CSV files in each path
+    players_files = [f for f in os.listdir(players_path) if f.lower().endswith(".csv")]
+    boxscores_files = [f for f in os.listdir(boxscores_path) if f.lower().endswith(".csv")]
+    seasons_files = [f for f in os.listdir(seasons_path) if f.lower().endswith(".csv")]
+    
+    # Load first CSV from each
+    players_raw = pd.read_csv(os.path.join(players_path, players_files[0]))
+    boxscores_raw = pd.read_csv(os.path.join(boxscores_path, boxscores_files[0]))
+    seasons_raw = pd.read_csv(os.path.join(seasons_path, seasons_files[0]))
+    
     return players_raw, boxscores_raw, seasons_raw
+
+players_raw, boxscores_raw, seasons_raw = load_all_raw()
+st.success(f"✅ Loaded datasets: {len(players_raw)} players")
 
 
 # --------------------------------------------------
 # DATA WRANGLING: construct season & career tables
 # --------------------------------------------------
 @st.cache_data(show_spinner=True)
-def build_clean_tables():
+def build_clean_tables(players_raw, boxscores_raw, seasons_raw):
     players_raw, boxscores_raw, seasons_raw = load_all_raw()
 
     # Normalize column names
@@ -232,7 +237,7 @@ def build_clean_tables():
     return season_merged, team_seasons, career_all
 
 
-season_df, team_df, career_df = build_clean_tables()
+season_df, team_df, career_df = build_clean_tables(players_raw, boxscores_raw, seasons_raw)
 
 # --------------------------------------------------
 # HOF INDEX (0–100) FOR ALL PLAYERS
