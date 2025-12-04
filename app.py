@@ -282,6 +282,32 @@ tabs = st.tabs([
 # TAB 1: OVERVIEW
 with tabs[0]:
     st.subheader("Dataset overview")
+    
+    # Summary metrics
+    st.markdown("### 📊 Dataset Summary")
+    col_a, col_b, col_c, col_d = st.columns(4)
+    
+    with col_a:
+        st.metric("Total Players", f"{len(career_df):,}")
+    
+    with col_b:
+        unique_seasons = season_df["player_name"].dropna().nunique() if "player_name" in season_df.columns else 0
+        st.metric("Players (Season Data)", f"{unique_seasons:,}")
+    
+    with col_c:
+        total_seasons = len(season_df) if not season_df.empty else 0
+        st.metric("Player-Seasons", f"{total_seasons:,}")
+    
+    with col_d:
+        year_range = ""
+        if "year" in season_df.columns and not season_df.empty:
+            min_year = int(season_df["year"].min())
+            max_year = int(season_df["year"].max())
+            year_range = f"{min_year}-{max_year}"
+        st.metric("Year Range", year_range if year_range else "N/A")
+    
+    st.markdown("---")
+    
     c1, c2 = st.columns(2)
 
     with c1:
