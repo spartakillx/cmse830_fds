@@ -5,3 +5,4 @@ plotly
 kagglehub
 matplotlib
 seaborn
+sklearn
