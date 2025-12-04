@@ -108,7 +108,7 @@ def filter_to_modern_era(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ==================================================
-# 2. LOAD THREE DATASETS
+# 2. LOAD DATASETS (Including Accolades)
 # ==================================================
 @st.cache_data
 def load_players_season_stats() -> pd.DataFrame:
@@ -178,14 +178,28 @@ def load_team_records() -> pd.DataFrame:
     return df
 
 
+@st.cache_data
+def load_accolades() -> pd.DataFrame:
+    """Dataset 4: Comprehensive accolades (OPTIONAL)"""
+    try:
+        df = download_first_csv("ryanschubertds/all-nba-aba-players-bio-stats-accolades")
+        df = normalize_columns(df)
+        st.success(f"✅ Loaded accolades dataset: {len(df)} players")
+        return df
+    except Exception as e:
+        st.warning(f"⚠️ Accolades dataset not available: {str(e)[:100]}")
+        return pd.DataFrame()
+
+
 # ==================================================
-# 3. BUILD MERGED & CAREER TABLES + HOF INDEX
+# 3. BUILD MERGED & CAREER TABLES + HOF INDEX WITH ACCOLADES
 # ==================================================
 @st.cache_data
 def build_merged_data():
     players = load_players_season_stats()
     trad = load_traditional_box()
     teams = load_team_records()
+    accolades = load_accolades()
 
     merged = players.copy()
 
@@ -231,12 +245,91 @@ def build_merged_data():
     else:
         career = pd.DataFrame(columns=["player_name"])
 
-    # --- HoF Index calculation (0-100 scale) ---
+    # ==================================================
+    # PROCESS ACCOLADES (if available)
+    # ==================================================
+    accolade_cols_found = []
+    
+    if not accolades.empty:
+        # Standardize player name
+        if "player" in accolades.columns and "player_name" not in accolades.columns:
+            accolades = accolades.rename(columns={"player": "player_name"})
+        
+        if "player_name" in accolades.columns:
+            # Look for accolade columns (case-insensitive)
+            accolade_map = {}
+            
+            for col in accolades.columns:
+                col_lower = col.lower()
+                
+                # MVP
+                if col_lower in ["mvp", "league_mvp", "nba_mvp"]:
+                    accolade_map["mvp"] = col
+                # Finals MVP
+                elif "finals" in col_lower and "mvp" in col_lower:
+                    accolade_map["finals_mvp"] = col
+                # Championships
+                elif col_lower in ["championships", "rings", "titles"]:
+                    accolade_map["championships"] = col
+                # All-Star Count
+                elif "all" in col_lower and "star" in col_lower and "count" in col_lower:
+                    accolade_map["all_star"] = col
+                # DPOY
+                elif col_lower in ["dpoy", "defensive_player_of_the_year"]:
+                    accolade_map["dpoy"] = col
+                # All-NBA teams
+                elif "all" in col_lower and "nba" in col_lower:
+                    if "1st" in col_lower or "first" in col_lower:
+                        accolade_map["all_nba_first"] = col
+                    elif "2nd" in col_lower or "second" in col_lower:
+                        accolade_map["all_nba_second"] = col
+                    elif "3rd" in col_lower or "third" in col_lower:
+                        accolade_map["all_nba_third"] = col
+                # All-Defense
+                elif "all" in col_lower and ("defense" in col_lower or "defensive" in col_lower):
+                    if "1st" in col_lower or "first" in col_lower:
+                        accolade_map["all_def_first"] = col
+                    elif "2nd" in col_lower or "second" in col_lower:
+                        accolade_map["all_def_second"] = col
+                # ROY
+                elif col_lower in ["roy", "rookie_of_the_year"]:
+                    accolade_map["roy"] = col
+            
+            if accolade_map:
+                st.info(f"🏆 Found accolades: {', '.join(accolade_map.keys())}")
+                
+                # Extract and aggregate
+                accolades_subset = accolades[["player_name"] + list(accolade_map.values())].copy()
+                
+                # Rename to standard names
+                rename_dict = {v: k for k, v in accolade_map.items()}
+                accolades_subset = accolades_subset.rename(columns=rename_dict)
+                
+                # Convert to numeric and sum by player
+                for col in accolade_map.keys():
+                    if col in accolades_subset.columns:
+                        accolades_subset[col] = pd.to_numeric(accolades_subset[col], errors="coerce").fillna(0)
+                
+                accolades_agg = accolades_subset.groupby("player_name", as_index=False).sum()
+                
+                # Merge with career
+                career = career.merge(accolades_agg, on="player_name", how="left")
+                
+                # Fill NaN with 0
+                for col in accolade_map.keys():
+                    if col in career.columns:
+                        career[col] = career[col].fillna(0)
+                        accolade_cols_found.append(col)
+                
+                st.success(f"✅ Merged accolades for {len(accolades_agg)} players")
+
+    # --- HoF Index calculation (0-100 scale) WITH ACCOLADES ---
     def safe_log(x):
         return np.log1p(np.maximum(x, 0))
 
     career["hof_score_raw"] = 0.0
 
+    # Base stats (production & longevity)
     if "tot_pts" in career.columns:
         career["hof_score_raw"] += 1.0 * safe_log(career["tot_pts"] / 1000.0)
     if "tot_trb" in career.columns:
@@ -252,6 +345,25 @@ def build_merged_data():
     if "avg_team_win_pct" in career.columns:
         career["hof_score_raw"] += 0.6 * (career["avg_team_win_pct"] - 0.5) * 2.0
 
+    # Accolades (heavily weighted if available)
+    accolade_weights = {
+        "mvp": 15.0,
+        "finals_mvp": 12.0,
+        "championships": 8.0,
+        "dpoy": 5.0,
+        "all_nba_first": 4.0,
+        "all_nba_second": 2.5,
+        "all_nba_third": 1.5,
+        "all_star": 2.0,
+        "all_def_first": 2.0,
+        "all_def_second": 1.0,
+        "roy": 1.5
+    }
+    
+    for accolade, weight in accolade_weights.items():
+        if accolade in career.columns:
+            career["hof_score_raw"] += weight * career[accolade]
+
     career["hof_score_raw"] = pd.to_numeric(career["hof_score_raw"], errors="coerce").fillna(0.0)
 
     if len(career) > 0:
@@ -260,10 +372,10 @@ def build_merged_data():
     else:
         career["hof_index"] = 0.0
 
-    return merged, trad, teams, career
+    return merged, trad, teams, career, accolade_cols_found
 
 
-merged_df, trad_df, teams_df, career_df = build_merged_data()
+merged_df, trad_df, teams_df, career_df, accolade_cols = build_merged_data()
 
 # ==================================================
 # 4. APP TABS
@@ -456,12 +568,24 @@ with tabs[4]:
     st.subheader("Hall of Fame Index Explorer (0-100)")
 
     st.markdown(
-        """
+        f"""
 **Hall of Fame Index** (0-100) based on:
+
+**Production & Longevity:**
 - Career totals (points, rebounds, assists)
 - Efficiency metrics (PER, WS, BPM if available)
 - Longevity (seasons, games)
 - Team success (average win%)
+
+**Accolades (if available):**
+{f"- 🏆 MVP (15x weight)" if "mvp" in accolade_cols else ""}
+{f"- 🏆 Finals MVP (12x weight)" if "finals_mvp" in accolade_cols else ""}
+{f"- 💍 Championships (8x weight)" if "championships" in accolade_cols else ""}
+{f"- 🛡️ DPOY (5x weight)" if "dpoy" in accolade_cols else ""}
+{f"- ⭐ All-NBA (4x/2.5x/1.5x weight)" if any(c in accolade_cols for c in ["all_nba_first", "all_nba_second", "all_nba_third"]) else ""}
+{f"- 🌟 All-Star (2x weight)" if "all_star" in accolade_cols else ""}
+{f"- 🛡️ All-Defense (2x/1x weight)" if any(c in accolade_cols for c in ["all_def_first", "all_def_second"]) else ""}
+{f"- 🆕 ROY (1.5x weight)" if "roy" in accolade_cols else ""}
 
 **Scale:**
 - **95+**: Elite / Inner-circle HoF
@@ -559,6 +683,31 @@ with tabs[4]:
                     st.write(f"Avg WS: {r['avg_ws']:.1f}")
                 if "avg_team_win_pct" in r.index and pd.notna(r["avg_team_win_pct"]):
                     st.write(f"Team win%: {r['avg_team_win_pct']:.3f}")
+                
+                # Show accolades if available
+                st.markdown("**🏆 Accolades**")
+                accolade_display = {
+                    "mvp": "MVP",
+                    "finals_mvp": "Finals MVP", 
+                    "championships": "Championships",
+                    "all_star": "All-Star",
+                    "dpoy": "DPOY",
+                    "all_nba_first": "All-NBA 1st",
+                    "all_nba_second": "All-NBA 2nd",
+                    "all_nba_third": "All-NBA 3rd",
+                    "all_def_first": "All-Def 1st",
+                    "all_def_second": "All-Def 2nd",
+                    "roy": "ROY"
+                }
+                
+                accolades_shown = False
+                for col, label in accolade_display.items():
+                    if col in r.index and pd.notna(r[col]) and r[col] > 0:
+                        st.write(f"{label}: {int(r[col])}")
+                        accolades_shown = True
+                
+                if not accolades_shown:
+                    st.caption("No accolade data available")
 
             # HoF Index
             hof_idx = float(r.get("hof_index", 0.0))
