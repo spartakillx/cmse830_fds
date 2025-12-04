@@ -75,12 +75,12 @@ TEAM_NAME_TO_ABBR: Dict[str, str] = {
 }
 
 def to_abbr(team_val: str) -> str:
-    """why: align team names across datasets to abbreviations for a reliable join."""
+    """Normalize team names to standard abbreviations for joins."""
     if not isinstance(team_val, str):
         return ""
     s = team_val.strip().upper()
     if 2 <= len(s) <= 4 and s.isalpha():
-        return s  # looks like an abbreviation already
+        return s
     s = s.replace(".", " ").replace("-", " ").replace("’", "'").replace("'", "")
     s = " ".join(s.split())
     return TEAM_NAME_TO_ABBR.get(s, s)
@@ -106,7 +106,7 @@ def _first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> Optio
     return None
 
 def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step: int = 1, key: Optional[str] = None) -> int:
-    # why: avoid Streamlit slider crash when min==max or invalid step
+    # guard: avoid slider crash when min==max or invalid step
     if max_value is None or min_value is None:
         return value
     max_value = int(max_value); min_value = int(min_value); value = int(value)
@@ -119,7 +119,7 @@ def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step
     return st.slider(label, min_value=min_value, max_value=max_value, value=value, step=step, key=key)
 
 def canonical_name_key(name: str) -> str:
-    """why: join across datasets with middle names/suffixes differences (e.g., 'Kobe Bean Bryant')."""
+    """Join across datasets with middle names/suffixes differences (e.g., 'Kobe Bean Bryant')."""
     if not isinstance(name, str): return ""
     s = name.strip().lower()
     s = "".join(ch for ch in s if ch.isalpha() or ch.isspace())
@@ -304,9 +304,9 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
         gb_cols = [c for c in ["year", "player_name", "team"] if c in box.columns]
         season_df = box.groupby(gb_cols, as_index=False).agg(agg_dict)
 
-    # merge team win% using abbreviations
+    # merge team win% using abbreviations (avoid duplicate 'team' labels)
     if not season_df.empty and not teams.empty and {"year", "team_abbr"}.issubset(teams.columns):
-        join_df = teams.rename(columns={"team_abbr": "team"})[["year", "team", "win_pct"]]
+        join_df = teams[["year", "team_abbr", "win_pct"]].rename(columns={"team_abbr": "team"})
         season_df = season_df.merge(join_df, on=["year", "team"], how="left")
 
     # career aggregate
@@ -328,14 +328,13 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if not career_df.empty and "player_name" in career_df.columns:
         career_df["name_key"] = career_df["player_name"].apply(canonical_name_key)
 
-    # two-step accolades merge (exact, then key via map to avoid many-to-many)
+    # two-step accolades merge (exact, then key via map)
     award_cols_set = set(ACC_MAPPING.keys()) | {"all_nba_total","all_defensive_total"}
     award_cols = [c for c in acc.columns if c in award_cols_set]
 
     if not acc.empty and not career_df.empty:
         cols_for_exact = ["player_name"] + (["name_key"] if "name_key" in acc.columns else []) + award_cols
         merged = career_df.merge(acc[cols_for_exact], on="player_name", how="left", suffixes=("", "_acc"))
-
         if award_cols:
             need_fill = merged[award_cols].isna().all(axis=1)
             if need_fill.any() and "name_key" in merged.columns and "name_key" in acc.columns:
@@ -434,7 +433,6 @@ with tabs[0]:
         m1.metric("Player-Seasons", f"{total:,}")
         m2.metric("With Win%", f"{joined:,}")
         m3.metric("Coverage", f"{coverage:.1f}%")
-        # sample missing
         missing = season_df[season_df["win_pct"].isna()]
         if not missing.empty:
             st.caption("Sample of unmatched (team/year):")
