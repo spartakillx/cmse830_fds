@@ -290,10 +290,12 @@ def build_clean_tables():
             agg_dict = {}
             for accolade in accolade_mappings.keys():
                 if accolade in accolades.columns:
+                    # Convert to numeric first
+                    accolades[accolade] = pd.to_numeric(accolades[accolade], errors="coerce").fillna(0)
                     agg_dict[accolade] = "sum"
             
             if agg_dict:
-                awards_career = accolades.groupby("player_name").agg(**agg_dict).reset_index()
+                awards_career = accolades.groupby("player_name", as_index=False).agg(agg_dict)
                 
                 # Combine All-NBA into total count
                 allnba_cols = ["all_nba_first", "all_nba_second", "all_nba_third"]
