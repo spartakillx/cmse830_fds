@@ -26,7 +26,7 @@ SEASON_START_YEAR = 2004  # 2004–05 and later
 def download_first_csv(dataset_id, prefer_contains=None):
     """
     Download a Kaggle dataset via kagglehub and load one CSV file.
-    If prefer_contains is provided, prefer CSV whose filename contains that substring.
+    If prefer_contains is provided, prefer the CSV whose filename contains that substring.
     """
     path = kagglehub.dataset_download(dataset_id)
     files = [f for f in os.listdir(path) if f.lower().endswith(".csv")]
@@ -243,34 +243,33 @@ def build_merged_data():
     else:
         career = pd.DataFrame(columns=["player_name"])
 
-    # --- HoF probability heuristic ---
+    # --- HoF probability heuristic (fixed, numeric) ---
     def safe_log(x):
         return np.log1p(np.maximum(x, 0))
 
-    pieces = []
+    # start with 0.0 so it's definitely numeric, not None
+    career["hof_score_raw"] = 0.0
+
     if "tot_pts" in career.columns:
-        pieces.append(1.0 * safe_log(career["tot_pts"] / 1000))
+        career["hof_score_raw"] += 1.0 * safe_log(career["tot_pts"] / 1000.0)
     if "tot_trb" in career.columns:
-        pieces.append(0.7 * safe_log(career["tot_trb"] / 500))
+        career["hof_score_raw"] += 0.7 * safe_log(career["tot_trb"] / 500.0)
     if "tot_ast" in career.columns:
-        pieces.append(0.9 * safe_log(career["tot_ast"] / 500))
+        career["hof_score_raw"] += 0.9 * safe_log(career["tot_ast"] / 500.0)
     if "games" in career.columns:
-        pieces.append(0.4 * safe_log(career["games"] / 200))
+        career["hof_score_raw"] += 0.4 * safe_log(career["games"] / 200.0)
     if "avg_per" in career.columns:
-        pieces.append(0.8 * (career["avg_per"] - 15) / 10)
+        career["hof_score_raw"] += 0.8 * ((career["avg_per"] - 15.0) / 10.0)
     if "avg_ws" in career.columns:
-        pieces.append(0.8 * career["avg_ws"] / 5)
+        career["hof_score_raw"] += 0.8 * (career["avg_ws"] / 5.0)
     if "avg_team_win_pct" in career.columns:
-        pieces.append(0.6 * (career["avg_team_win_pct"] - 0.5) * 2)
+        career["hof_score_raw"] += 0.6 * (career["avg_team_win_pct"] - 0.5) * 2.0
 
-    if pieces:
-        raw_score = np.sum(pieces, axis=0)
-    else:
-        raw_score = pd.Series(0, index=career.index)
+    # ensure it's float, no None
+    career["hof_score_raw"] = pd.to_numeric(career["hof_score_raw"], errors="coerce").fillna(0.0)
 
-    career["hof_score_raw"] = raw_score
     if len(career) > 0:
-        career["hof_prob"] = career["hof_score_raw"].rank(pct=True)
+        career["hof_prob"] = career["hof_score_raw"].rank(pct=True, method="dense").astype(float)
     else:
         career["hof_prob"] = []
 
