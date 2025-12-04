@@ -10,9 +10,6 @@ import kagglehub
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# --------------------------------------------------
-# STREAMLIT PAGE CONFIG
-# --------------------------------------------------
 st.set_page_config(
     page_title="NBA Analytics & Hall of Fame Explorer",
     page_icon="🏀",
@@ -23,11 +20,10 @@ sns.set()
 
 SEASON_START_YEAR = 2004  # 2004–05 and later
 
-
 # ==================================================
-# 1. DATA LOADING HELPERS (3 DATASETS VIA KAGGLEHUB)
+# 1. GENERIC HELPERS
 # ==================================================
-def download_first_csv(dataset_id: str, prefer_contains: str | None = None) -> pd.DataFrame:
+def download_first_csv(dataset_id, prefer_contains=None):
     """
     Download a Kaggle dataset via kagglehub and load one CSV file.
     If prefer_contains is provided, prefer CSV whose filename contains that substring.
@@ -60,21 +56,64 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def extract_season_start(season_value) -> float | None:
+def extract_season_start_from_string(season_value):
     """
-    Convert season like '2004-05' or '2004-2005' to 2004 (float) for filtering.
+    Convert things like '2004-05', '2004-2005', '2004' to 2004.
     """
     if pd.isna(season_value):
         return np.nan
     s = str(season_value)
-    # take first 4 digits
+    # take first 4 consecutive digits
+    digits = "".join([ch for ch in s if ch.isdigit()])
+    if len(digits) < 4:
+        return np.nan
     try:
-        year = int(s[:4])
+        year = int(digits[:4])
     except ValueError:
         return np.nan
     return year
 
 
+def attach_season_start(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Try to create a 'season_start' column from 'season' or 'year'.
+    """
+    df = df.copy()
+    season_col = None
+    for name in ["season", "year", "season_year"]:
+        if name in df.columns:
+            season_col = name
+            break
+
+    if season_col is None:
+        df["season_start"] = np.nan
+        return df
+
+    col_vals = df[season_col]
+    if pd.api.types.is_numeric_dtype(col_vals):
+        df["season_start"] = pd.to_numeric(col_vals, errors="coerce")
+    else:
+        df["season_start"] = col_vals.apply(extract_season_start_from_string)
+
+    return df
+
+
+def filter_to_modern_era(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep rows with season_start >= SEASON_START_YEAR when that column is usable.
+    If not usable (all NaN), return df unchanged so we never wipe out all rows.
+    """
+    if "season_start" not in df.columns:
+        return df
+    if not df["season_start"].notna().any():
+        # nothing usable, don't filter
+        return df
+    return df[df["season_start"] >= SEASON_START_YEAR].copy()
+
+
+# ==================================================
+# 2. LOAD THREE DATASETS
+# ==================================================
 @st.cache_data
 def load_players_season_stats() -> pd.DataFrame:
     """
@@ -84,25 +123,17 @@ def load_players_season_stats() -> pd.DataFrame:
     df = download_first_csv("drgilermo/nba-players-stats", prefer_contains="Seasons")
     df = normalize_columns(df)
 
-    # Try to standardize key columns
+    # Standardize player/team names
     rename_map = {}
     for col in df.columns:
         if col in ["player", "player_name"]:
             rename_map[col] = "player_name"
-        if col in ["season"]:
-            rename_map[col] = "season"
         if col in ["tm", "team", "team_abbreviation"]:
             rename_map[col] = "team"
     df = df.rename(columns=rename_map)
 
-    # Add season_start for filtering
-    if "season" in df.columns:
-        df["season_start"] = df["season"].apply(extract_season_start)
-    else:
-        df["season_start"] = np.nan
-
-    # Filter to 2004–05 and later
-    df = df[df["season_start"].fillna(0) >= SEASON_START_YEAR]
+    df = attach_season_start(df)
+    df = filter_to_modern_era(df)
 
     return df
 
@@ -111,25 +142,21 @@ def load_players_season_stats() -> pd.DataFrame:
 def load_traditional_box() -> pd.DataFrame:
     """
     Dataset 2: szymonjwiak/nba-traditional
-    Game/season level 'traditional' stats – used for extra EDA.
+    Game/season level 'traditional' stats – extra EDA.
     """
     df = download_first_csv("szymonjwiak/nba-traditional")
     df = normalize_columns(df)
 
-    # Standardize season + player + team if they exist
     rename_map = {}
     for col in df.columns:
         if col in ["player", "player_name"]:
             rename_map[col] = "player_name"
         if col in ["team_abbreviation", "tm", "team"]:
             rename_map[col] = "team"
-        if "season" in col and col != "season_start":
-            rename_map[col] = "season"
     df = df.rename(columns=rename_map)
 
-    if "season" in df.columns:
-        df["season_start"] = df["season"].apply(extract_season_start)
-        df = df[df["season_start"].fillna(0) >= SEASON_START_YEAR]
+    df = attach_season_start(df)
+    df = filter_to_modern_era(df)
 
     return df
 
@@ -138,12 +165,11 @@ def load_traditional_box() -> pd.DataFrame:
 def load_team_records() -> pd.DataFrame:
     """
     Dataset 3: boonpalipatana/nba-season-records-from-every-year
-    Team season wins/losses from many years.
+    Team season wins/losses.
     """
     df = download_first_csv("boonpalipatana/nba-season-records-from-every-year")
     df = normalize_columns(df)
 
-    # Expect something like: team, season, w, l, win_pct
     rename_map = {}
     for col in df.columns:
         if col in ["team", "franchise"]:
@@ -156,33 +182,28 @@ def load_team_records() -> pd.DataFrame:
             rename_map[col] = "losses"
     df = df.rename(columns=rename_map)
 
-    if "season" in df.columns:
-        df["season_start"] = df["season"].apply(extract_season_start)
-    else:
-        df["season_start"] = np.nan
+    df = attach_season_start(df)
+    df = filter_to_modern_era(df)
 
-    df = df[df["season_start"].fillna(0) >= SEASON_START_YEAR]
-
-    # Win% if possible
     if "wins" in df.columns and "losses" in df.columns:
-        total_games = (df["wins"].fillna(0) + df["losses"].fillna(0))
+        total_games = df["wins"].fillna(0) + df["losses"].fillna(0)
         df["win_pct"] = np.where(total_games > 0, df["wins"] / total_games, np.nan)
 
     return df
 
 
+# ==================================================
+# 3. BUILD MERGED & CAREER TABLES + HOF PROB
+# ==================================================
 @st.cache_data
 def build_merged_data():
-    """
-    Merge season-level player stats with team win% for that season+team,
-    and create a career-level table with HoF probability score.
-    """
     players = load_players_season_stats()
     trad = load_traditional_box()
     teams = load_team_records()
 
-    # Merge team win_pct into players on season_start + team
     merged = players.copy()
+
+    # merge team win% onto players
     if {"team", "season_start"}.issubset(merged.columns) and not teams.empty:
         team_small = teams[["team", "season_start", "win_pct"]].drop_duplicates()
         merged = merged.merge(
@@ -192,20 +213,14 @@ def build_merged_data():
             suffixes=("", "_team")
         )
 
-    # Choose numeric stat columns for career aggregation (if exist)
-    num_cols = merged.select_dtypes(include=np.number).columns.tolist()
-    core_stats = [c for c in ["g", "mp", "pts", "trb", "ast", "stl", "blk", "tov"] if c in merged.columns]
-    rate_stats = [c for c in ["pts_per_g", "trb_per_g", "ast_per_g"] if c in merged.columns]
-    advanced = [c for c in ["per", "ws", "bpm"] if c in merged.columns]
-
-    # Build career table
+    # Ensure we have a player_name column
     if "player_name" not in merged.columns:
-        # fallback: try generic 'player'
         if "player" in merged.columns:
             merged = merged.rename(columns={"player": "player_name"})
         else:
             merged["player_name"] = "Unknown"
 
+    # Build career-level aggregation
     agg_dict = {}
     if "season_start" in merged.columns:
         agg_dict["from_year"] = ("season_start", "min")
@@ -213,23 +228,29 @@ def build_merged_data():
         agg_dict["seasons"] = ("season_start", "nunique")
     if "g" in merged.columns:
         agg_dict["games"] = ("g", "sum")
-    for c in core_stats:
-        agg_dict[f"tot_{c}"] = (c, "sum")
-    for c in rate_stats:
-        agg_dict[f"avg_{c}"] = (c, "mean")
-    for c in advanced:
-        agg_dict[f"avg_{c}"] = (c, "mean")
+
+    # core counting stats if present
+    for stat in ["g", "mp", "pts", "trb", "ast", "stl", "blk", "tov"]:
+        if stat in merged.columns:
+            agg_dict[f"tot_{stat}"] = (stat, "sum")
+
+    # rate/advanced stats
+    for stat in ["per", "ws", "bpm"]:
+        if stat in merged.columns:
+            agg_dict[f"avg_{stat}"] = (stat, "mean")
+
     if "win_pct" in merged.columns:
         agg_dict["avg_team_win_pct"] = ("win_pct", "mean")
 
-    career = merged.groupby("player_name").agg(**agg_dict).reset_index()
+    if agg_dict:
+        career = merged.groupby("player_name").agg(**agg_dict).reset_index()
+    else:
+        career = pd.DataFrame(columns=["player_name"])
 
-    # Simple "impact score" using log-scaled totals and rates
-    # (not a real HoF model, but a probabilistic score)
+    # --- HoF probability heuristic ---
     def safe_log(x):
         return np.log1p(np.maximum(x, 0))
 
-    # Collect feature pieces (use what exists)
     pieces = []
     if "tot_pts" in career.columns:
         pieces.append(1.0 * safe_log(career["tot_pts"] / 1000))
@@ -251,9 +272,12 @@ def build_merged_data():
     else:
         raw_score = pd.Series(0, index=career.index)
 
-    # Normalize to [0,1] using percentile rank
     career["hof_score_raw"] = raw_score
-    career["hof_prob"] = career["hof_score_raw"].rank(pct=True)
+    # percentile-based probability-like value
+    if len(career) > 0:
+        career["hof_prob"] = career["hof_score_raw"].rank(pct=True)
+    else:
+        career["hof_prob"] = []
 
     return merged, trad, teams, career
 
@@ -261,7 +285,7 @@ def build_merged_data():
 merged_df, trad_df, teams_df, career_df = build_merged_data()
 
 # ==================================================
-# 2. APP LAYOUT – TABS
+# 4. APP TABS
 # ==================================================
 st.title("🏀 NBA Analytics & Hall of Fame Explorer (2004–05 and later)")
 st.caption("Data from three Kaggle datasets: player seasons, traditional stats, and team records.")
@@ -281,6 +305,7 @@ tabs = st.tabs([
 # --------------------------------------------------
 with tabs[0]:
     st.subheader("Dataset overview")
+
     c1, c2 = st.columns([1.5, 1])
 
     with c1:
@@ -295,6 +320,14 @@ with tabs[0]:
 
     st.markdown("**Columns (first 40):**")
     st.code(", ".join(merged_df.columns.tolist()[:40]))
+
+    st.markdown("---")
+    st.markdown(
+        "Data sources: Kaggle – "
+        "`drgilermo/nba-players-stats`, `szymonjwiak/nba-traditional`, "
+        "`boonpalipatana/nba-season-records-from-every-year`."
+    )
+    st.markdown("Created by **Aditya Sudarsan Anand** – CMSE 830 Final Project.")
 
 
 # --------------------------------------------------
@@ -325,8 +358,11 @@ with tabs[1]:
         st.markdown("**Stat distribution (histogram + KDE)**")
         if num_cols:
             stat = st.selectbox("Select stat", num_cols, index=min(3, len(num_cols)-1))
-            players = sorted(merged_df["player_name"].dropna().unique())
-            p_filter = st.selectbox("Filter by player (optional)", ["All"] + players)
+            if "player_name" in merged_df.columns:
+                players = sorted(merged_df["player_name"].dropna().unique())
+                p_filter = st.selectbox("Filter by player (optional)", ["All"] + players)
+            else:
+                p_filter = "All"
             sub = merged_df if p_filter == "All" else merged_df[merged_df["player_name"] == p_filter]
             fig, ax = plt.subplots(figsize=(7, 5))
             sns.histplot(sub[stat].dropna(), kde=True, bins=25, ax=ax)
@@ -353,62 +389,68 @@ with tabs[1]:
 with tabs[2]:
     st.subheader("Player comparison (head-to-head)")
 
-    players = sorted(career_df["player_name"].dropna().unique())
-    if len(players) < 2:
-        st.info("Not enough players in career table.")
+    if "player_name" not in career_df.columns or career_df.empty:
+        st.info("Career table is empty or missing player_name.")
     else:
-        c1, c2 = st.columns(2)
-        with c1:
-            p1 = st.selectbox("Player 1", players, key="cmp_p1")
-        with c2:
-            p2 = st.selectbox("Player 2", players, key="cmp_p2")
+        players = sorted(career_df["player_name"].dropna().unique())
+        if len(players) < 2:
+            st.info("Not enough players in career table.")
+        else:
+            c1, c2 = st.columns(2)
+            with c1:
+                p1 = st.selectbox("Player 1", players, key="cmp_p1")
+            with c2:
+                p2 = st.selectbox("Player 2", players, key="cmp_p2")
 
-        stats_candidates = [
-            c for c in [
-                "tot_pts", "tot_trb", "tot_ast", "tot_stl", "tot_blk", "tot_tov",
-                "games", "hof_prob"
-            ] if c in career_df.columns
-        ]
-        stats_selected = st.multiselect(
-            "Metrics to compare",
-            stats_candidates,
-            default=stats_candidates
-        )
+            stats_candidates = [
+                c for c in [
+                    "tot_pts", "tot_trb", "tot_ast", "tot_stl", "tot_blk",
+                    "tot_tov", "games", "hof_prob"
+                ] if c in career_df.columns
+            ]
+            stats_selected = st.multiselect(
+                "Metrics to compare",
+                stats_candidates,
+                default=stats_candidates
+            )
 
-        sub = career_df.set_index("player_name").loc[[p1, p2], stats_selected] if stats_selected else None
+            if stats_selected:
+                sub = (
+                    career_df.set_index("player_name")
+                    .loc[[p1, p2], stats_selected]
+                )
 
-        if sub is not None:
-            # bar chart
-            fig, ax = plt.subplots(figsize=(8, 4))
-            sub.T.plot(kind="bar", ax=ax)
-            ax.set_title(f"{p1} vs {p2}")
-            ax.set_ylabel("Value")
-            ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
-            st.pyplot(fig)
+                # bar chart
+                fig, ax = plt.subplots(figsize=(8, 4))
+                sub.T.plot(kind="bar", ax=ax)
+                ax.set_title(f"{p1} vs {p2}")
+                ax.set_ylabel("Value")
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
+                st.pyplot(fig)
 
-            # radar chart (normalized)
-            def radar_plot(df_in: pd.DataFrame):
-                cats = list(df_in.columns)
-                norm = (df_in - df_in.min()) / (df_in.max() - df_in.min())
-                v1 = norm.iloc[0].fillna(0).values
-                v2 = norm.iloc[1].fillna(0).values
-                angles = np.linspace(0, 2 * np.pi, len(cats), endpoint=False).tolist()
-                angles += angles[:1]
-                v1 = np.concatenate([v1, v1[:1]])
-                v2 = np.concatenate([v2, v2[:1]])
+                # radar chart (normalized)
+                def radar_plot(df_in: pd.DataFrame):
+                    cats = list(df_in.columns)
+                    norm = (df_in - df_in.min()) / (df_in.max() - df_in.min())
+                    v1 = norm.iloc[0].fillna(0).values
+                    v2 = norm.iloc[1].fillna(0).values
+                    angles = np.linspace(0, 2 * np.pi, len(cats), endpoint=False).tolist()
+                    angles += angles[:1]
+                    v1 = np.concatenate([v1, v1[:1]])
+                    v2 = np.concatenate([v2, v2[:1]])
 
-                fig2 = plt.figure(figsize=(6, 6))
-                ax2 = plt.subplot(111, polar=True)
-                ax2.plot(angles, v1)
-                ax2.fill(angles, v1, alpha=0.1)
-                ax2.plot(angles, v2)
-                ax2.fill(angles, v2, alpha=0.1)
-                ax2.set_xticks(angles[:-1])
-                ax2.set_xticklabels(cats)
-                ax2.set_title("Normalized radar")
-                return fig2
+                    fig2 = plt.figure(figsize=(6, 6))
+                    ax2 = plt.subplot(111, polar=True)
+                    ax2.plot(angles, v1)
+                    ax2.fill(angles, v1, alpha=0.1)
+                    ax2.plot(angles, v2)
+                    ax2.fill(angles, v2, alpha=0.1)
+                    ax2.set_xticks(angles[:-1])
+                    ax2.set_xticklabels(cats)
+                    ax2.set_title("Normalized radar")
+                    return fig2
 
-            st.pyplot(radar_plot(sub))
+                st.pyplot(radar_plot(sub))
 
 
 # --------------------------------------------------
@@ -442,45 +484,49 @@ with tabs[4]:
     st.subheader("Hall of Fame probability explorer")
 
     st.markdown(
-        "This is **not an official HoF model** – it's a heuristic score based on career totals,"
-        " efficiency (if available), longevity, and team success, scaled into a 0–1 probability-like value."
+        "This is **not an official HoF model** – it's a heuristic score based on career totals, "
+        "efficiency (if available), longevity, and team success, scaled into a 0–1 probability-like value."
     )
 
-    # Top N players by HoF prob
-    top_n = st.slider("Show top N players", min_value=10, max_value=200, value=50, step=10)
-    st.markdown(f"**Top {top_n} players by HoF probability**")
-    st.dataframe(
-        career_df.sort_values("hof_prob", ascending=False).head(top_n)
-    )
+    if career_df.empty:
+        st.info("Career table is empty – check that player-season data loaded correctly.")
+    else:
+        top_n = st.slider("Show top N players", min_value=10, max_value=200, value=50, step=10)
+        st.markdown(f"**Top {top_n} players by HoF probability**")
+        st.dataframe(
+            career_df.sort_values("hof_prob", ascending=False).head(top_n)
+        )
 
-    # Individual player view
-    players = sorted(career_df["player_name"].dropna().unique())
-    sel = st.selectbox("Inspect a player", players, key="hof_player")
-    row = career_df[career_df["player_name"] == sel]
+        players = sorted(career_df["player_name"].dropna().unique())
+        sel = st.selectbox("Inspect a player", players, key="hof_player")
+        row = career_df[career_df["player_name"] == sel]
 
-    if not row.empty:
-        r = row.iloc[0]
-        st.markdown(f"### {sel}")
-        st.write(f"Seasons: {int(r.get('seasons', np.nan)) if pd.notna(r.get('seasons', np.nan)) else 'N/A'}")
-        st.write(f"Games: {int(r.get('games', np.nan)) if pd.notna(r.get('games', np.nan)) else 'N/A'}")
-        if "tot_pts" in r:
-            st.write(f"Total points: {int(r['tot_pts']):,}")
-        if "tot_trb" in r:
-            st.write(f"Total rebounds: {int(r['tot_trb']):,}")
-        if "tot_ast" in r:
-            st.write(f"Total assists: {int(r['tot_ast']):,}")
-        if "avg_team_win_pct" in r and pd.notna(r["avg_team_win_pct"]):
-            st.write(f"Average team win%: {r['avg_team_win_pct']:.3f}")
+        if not row.empty:
+            r = row.iloc[0]
+            st.markdown(f"### {sel}")
+            seasons_val = r.get("seasons", np.nan)
+            games_val = r.get("games", np.nan)
+            if pd.notna(seasons_val):
+                st.write(f"Seasons: {int(seasons_val)}")
+            if pd.notna(games_val):
+                st.write(f"Games: {int(games_val):,}")
+            if "tot_pts" in r and pd.notna(r["tot_pts"]):
+                st.write(f"Total points: {int(r['tot_pts']):,}")
+            if "tot_trb" in r and pd.notna(r["tot_trb"]):
+                st.write(f"Total rebounds: {int(r['tot_trb']):,}")
+            if "tot_ast" in r and pd.notna(r["tot_ast"]):
+                st.write(f"Total assists: {int(r['tot_ast']):,}")
+            if "avg_team_win_pct" in r and pd.notna(r["avg_team_win_pct"]):
+                st.write(f"Average team win%: {r['avg_team_win_pct']:.3f}")
 
-        st.markdown(f"### Estimated HoF probability: **{r['hof_prob']:.3f}**")
-
-        # Simple gauge-like bar
-        fig, ax = plt.subplots(figsize=(6, 1.2))
-        ax.barh([0], [r["hof_prob"]], height=0.4)
-        ax.set_xlim(0, 1)
-        ax.set_yticks([])
-        ax.set_xlabel("HoF probability (relative)")
-        st.pyplot(fig)
+            if "hof_prob" in r and pd.notna(r["hof_prob"]):
+                st.markdown(f"### Estimated HoF probability: **{r['hof_prob']:.3f}**")
+                fig, ax = plt.subplots(figsize=(6, 1.2))
+                ax.barh([0], [r["hof_prob"]], height=0.4)
+                ax.set_xlim(0, 1)
+                ax.set_yticks([])
+                ax.set_xlabel("HoF probability (relative)")
+                st.pyplot(fig)
 
 
 # --------------------------------------------------
@@ -534,7 +580,7 @@ with tabs[5]:
 
 
 # --------------------------------------------------
-# TAB 7 – DOWNLOADS (NO groupby('year') BUG)
+# TAB 7 – DOWNLOADS
 # --------------------------------------------------
 with tabs[6]:
     st.subheader("Download cleaned tables")
@@ -551,11 +597,7 @@ with tabs[6]:
     )
 
     st.markdown("**Download career-level table with HoF probabilities**")
-
-    # NO groupby('year') here – we just use the prepared career_df directly
     career_download = career_df.copy()
-
-    # Optional nice column ordering
     preferred_cols = [
         "player_name", "from_year", "to_year", "seasons", "games",
         "tot_pts", "tot_trb", "tot_ast", "hof_prob"
@@ -578,10 +620,3 @@ with tabs[6]:
         file_name="team_records_2004plus.csv",
         mime="text/csv"
     )
-
-st.markdown("---")
-st.markdown(
-    "Data sources: Kaggle – `drgilermo/nba-players-stats`, "
-    "`szymonjwiak/nba-traditional`, `boonpalipatana/nba-season-records-from-every-year`."
-)
-st.markdown("Created by **Aditya Sudarsan Anand** – CMSE 830 Final Project.")
