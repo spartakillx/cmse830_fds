@@ -45,7 +45,6 @@ if "last_models" not in st.session_state:
 
 # ------------------------- ABOUT CONTENT (single source of truth) -------------------------
 ABOUT_MD = """
-# 🏀 NBA Analytics & Hall of Fame Index Dashboard (Final Project)
 
 ## Overview
 This dashboard unifies **three NBA datasets** to analyze player production, team performance, and accolades, and to derive a **Hall-of-Fame Index** (0–100) that blends longevity, box-score totals, team success, and awards. On top of interactive EDA and player tools, the app includes a **modeling suite** with:
@@ -75,24 +74,10 @@ The app auto-downloads via KaggleHub when possible; it can also read local CSVs 
 - HoF Index (0–100): z-scores across production & accolades with documented weights; percentile scaling; contribution plots; CSV export.
 - Modeling Suite: team Win% regression (LR, RF) + Elite HoF classification (LogReg, RF) with metrics, CV, ROC, confusion matrix, importances.
 
-## How to Run
-pip install -r requirements.txt
-streamlit run app.py
-
-If Kaggle is blocked, place the three datasets’ CSVs inside a zip under data/ and the app will try local loading.
-
 ## Reproducibility
 - Deterministic seeds
 - @st.cache_data for data/features
 - Download buttons for predictions and curated career tables (with HoF Index)
-
-## Rubric Alignment
-- Data: 3 sources; advanced cleaning; complex joins (name_key fallback + abbr mapping)
-- EDA: multiple visualization types; statistical summaries; trend lines
-- Feature Engineering: per-game rates, aggregates, name keys, team mapping, HoF contributions
-- Modeling: 2 tasks × 2 models; metrics, CV, comparisons, importances
-- Streamlit: multiple interactives; caching; session state; CSV exports; robust UX
-- Documentation: README + in-app guidance
 
 ## Author
 Aditya Sudarsan Anand — CMSE 830 Final Project
