@@ -38,8 +38,8 @@ ACC_MAPPING: Dict[str, List[str]] = {
     "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd", "all-nba 3rd team"],
     "all_star": ["all_star_count", "all-star count", "all_star", "allstar", "all_stars", "all-star"],
     "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards", "defensive player of the year"],
-    "all_defensive_first": ["all_defensive_first", "all-defensive_first", "all_def_1st", "all-defense 1st team"],
-    "all_defensive_second": ["all_defensive_second", "all-defensive_second", "all_def_2nd", "all-defense 2nd team"],
+    "all_defensive_first": ["all_defensive_first", "all-defensive-first", "all_def_1st", "all-defense 1st team"],
+    "all_defensive_second": ["all_defensive_second", "all-defensive-second", "all_def_2nd", "all-defense 2nd team"],
     "roy": ["roy", "rookie_of_the_year", "rookie of the year"],
     "scoring_titles": ["scoring_champion", "scoring_titles", "scoring_leader", "scoring champion"],
 }
@@ -56,6 +56,34 @@ ALL_POSSIBLE_ACCS = [
     "mvp","finals_mvp","championships","dpoy","all_nba_first","all_nba_second","all_nba_third","all_nba_total",
     "all_star","all_defensive_first","all_defensive_second","all_defensive_total","roy","scoring_titles"
 ]
+
+# ---------- TEAM NAME NORMALIZATION ----------
+TEAM_NAME_TO_ABBR: Dict[str, str] = {
+    "ATLANTA HAWKS": "ATL", "BOSTON CELTICS": "BOS", "BROOKLYN NETS": "BKN", "NEW JERSEY NETS": "NJN",
+    "CHARLOTTE BOBCATS": "CHA", "CHARLOTTE HORNETS": "CHA", "CHICAGO BULLS": "CHI", "CLEVELAND CAVALIERS": "CLE",
+    "DETROIT PISTONS": "DET", "INDIANA PACERS": "IND", "MIAMI HEAT": "MIA", "MILWAUKEE BUCKS": "MIL",
+    "NEW YORK KNICKS": "NYK", "ORLANDO MAGIC": "ORL", "PHILADELPHIA 76ERS": "PHI", "TORONTO RAPTORS": "TOR",
+    "WASHINGTON WIZARDS": "WAS",
+    "DALLAS MAVERICKS": "DAL", "DENVER NUGGETS": "DEN", "GOLDEN STATE WARRIORS": "GSW", "HOUSTON ROCKETS": "HOU",
+    "LA CLIPPERS": "LAC", "LOS ANGELES CLIPPERS": "LAC", "LOS ANGELES LAKERS": "LAL", "MEMPHIS GRIZZLIES": "MEM",
+    "MINNESOTA TIMBERWOLVES": "MIN", "NEW ORLEANS HORNETS": "NOH", "NEW ORLEANS/OKLAHOMA CITY HORNETS": "NOK",
+    "NEW ORLEANS PELICANS": "NOP", "OKLAHOMA CITY THUNDER": "OKC", "SEATTLE SUPERSONICS": "SEA",
+    "PHOENIX SUNS": "PHX", "PORTLAND TRAIL BLAZERS": "POR", "SACRAMENTO KINGS": "SAC", "SAN ANTONIO SPURS": "SAS",
+    "UTAH JAZZ": "UTA",
+    # Extras
+    "GS WARRIORS": "GSW", "SA SPURS": "SAS", "NO PELICANS": "NOP", "NO HORNETS": "NOH",
+}
+
+def to_abbr(team_val: str) -> str:
+    """why: align team names across datasets to abbreviations for a reliable join."""
+    if not isinstance(team_val, str):
+        return ""
+    s = team_val.strip().upper()
+    if 2 <= len(s) <= 4 and s.isalpha():
+        return s  # looks like an abbreviation already
+    s = s.replace(".", " ").replace("-", " ").replace("’", "'").replace("'", "")
+    s = " ".join(s.split())
+    return TEAM_NAME_TO_ABBR.get(s, s)
 
 # ---------- HELPERS ----------
 def _safe_to_int(x) -> Optional[int]:
@@ -78,6 +106,7 @@ def _first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> Optio
     return None
 
 def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step: int = 1, key: Optional[str] = None) -> int:
+    # why: avoid Streamlit slider crash when min==max or invalid step
     if max_value is None or min_value is None:
         return value
     max_value = int(max_value); min_value = int(min_value); value = int(value)
@@ -90,7 +119,7 @@ def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step
     return st.slider(label, min_value=min_value, max_value=max_value, value=value, step=step, key=key)
 
 def canonical_name_key(name: str) -> str:
-    """why: join across datasets with middle names/suffixes differences."""
+    """why: join across datasets with middle names/suffixes differences (e.g., 'Kobe Bean Bryant')."""
     if not isinstance(name, str): return ""
     s = name.strip().lower()
     s = "".join(ch for ch in s if ch.isalpha() or ch.isspace())
@@ -186,7 +215,7 @@ def load_team_records() -> pd.DataFrame:
             df = _read_csv_from_zip(zp, "season") or _read_csv_from_zip(zp, "records")
             if df is not None: break
         if df is None:
-            return pd.DataFrame(columns=["year", "team", "win_pct"])
+            return pd.DataFrame(columns=["year", "team_abbr", "win_pct"])
     df.columns = df.columns.str.strip().str.lower()
     year_col = _first_existing_column(df, ["year", "season", "season_end", "season_start"])
     team_col = _first_existing_column(df, ["team", "team_name", "franchise", "club", "name"])
@@ -202,15 +231,17 @@ def load_team_records() -> pd.DataFrame:
     if "win_pct" not in work.columns and {"wins", "losses"}.issubset(work.columns):
         denom = (work["wins"] + work["losses"]).replace(0, np.nan)
         work["win_pct"] = (work["wins"] / denom).astype(float)
-    if "team" in work.columns: work["team"] = work["team"].astype(str).str.upper().str.strip()
+    if "team" in work.columns:
+        work["team"] = work["team"].astype(str).str.strip()
+        work["team_abbr"] = work["team"].apply(to_abbr).str.upper()
     if "year" in work.columns:
         work = work.dropna(subset=["year"])
         work["year"] = work["year"].astype(int)
         work = work[work["year"] >= MIN_YEAR]
-    keep = [c for c in ["year", "team", "win_pct"] if c in work.columns]
+    keep = [c for c in ["year", "team", "team_abbr", "win_pct"] if c in work.columns]
     if not keep:
-        return pd.DataFrame(columns=["year", "team", "win_pct"])
-    return work[keep].dropna(subset=["team"]).drop_duplicates()
+        return pd.DataFrame(columns=["year", "team_abbr", "win_pct"])
+    return work[keep].dropna(subset=["team_abbr"]).drop_duplicates()
 
 @st.cache_data(show_spinner=True)
 def load_accolades() -> pd.DataFrame:
@@ -261,7 +292,7 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     teams = load_team_records()
     acc = load_accolades()
 
-    # player-season
+    # player-season aggregates
     if box.empty or "year" not in box.columns or "player_name" not in box.columns:
         season_df = pd.DataFrame()
     else:
@@ -272,9 +303,11 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             agg_dict["games"] = pd.Series.nunique
         gb_cols = [c for c in ["year", "player_name", "team"] if c in box.columns]
         season_df = box.groupby(gb_cols, as_index=False).agg(agg_dict)
-    # merge team win%
-    if not season_df.empty and not teams.empty and set(["year","team"]).issubset(teams.columns):
-        season_df = season_df.merge(teams, on=["year","team"], how="left")
+
+    # merge team win% using abbreviations
+    if not season_df.empty and not teams.empty and {"year", "team_abbr"}.issubset(teams.columns):
+        join_df = teams.rename(columns={"team_abbr": "team"})[["year", "team", "win_pct"]]
+        season_df = season_df.merge(join_df, on=["year", "team"], how="left")
 
     # career aggregate
     if season_df.empty:
@@ -295,22 +328,18 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if not career_df.empty and "player_name" in career_df.columns:
         career_df["name_key"] = career_df["player_name"].apply(canonical_name_key)
 
-    # two-step accolades merge (exact, then key via map)
+    # two-step accolades merge (exact, then key via map to avoid many-to-many)
     award_cols_set = set(ACC_MAPPING.keys()) | {"all_nba_total","all_defensive_total"}
     award_cols = [c for c in acc.columns if c in award_cols_set]
 
     if not acc.empty and not career_df.empty:
-        # exact-name merge first
         cols_for_exact = ["player_name"] + (["name_key"] if "name_key" in acc.columns else []) + award_cols
         merged = career_df.merge(acc[cols_for_exact], on="player_name", how="left", suffixes=("", "_acc"))
 
         if award_cols:
-            # rows still missing ALL awards after exact-name merge
             need_fill = merged[award_cols].isna().all(axis=1)
             if need_fill.any() and "name_key" in merged.columns and "name_key" in acc.columns:
-                # one row per key to avoid many-to-many explosion
                 acc_key = acc.groupby("name_key")[award_cols].max()
-                # map each award individually to align lengths
                 key_series = merged.loc[need_fill, "name_key"]
                 for col in award_cols:
                     merged.loc[need_fill, col] = key_series.map(acc_key[col]).values
@@ -395,6 +424,24 @@ with tabs[0]:
         st.markdown("**Career-level (sample)**")
         st.dataframe(career_df[show_cols].head(20), use_container_width=True)
 
+    st.markdown("---")
+    st.markdown("### 🔎 Data quality: Win% join")
+    if not season_df.empty and "win_pct" in season_df.columns:
+        joined = season_df["win_pct"].notna().sum()
+        total = len(season_df)
+        coverage = (joined / total * 100) if total else 0.0
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Player-Seasons", f"{total:,}")
+        m2.metric("With Win%", f"{joined:,}")
+        m3.metric("Coverage", f"{coverage:.1f}%")
+        # sample missing
+        missing = season_df[season_df["win_pct"].isna()]
+        if not missing.empty:
+            st.caption("Sample of unmatched (team/year):")
+            st.dataframe(missing[["year","team"]].drop_duplicates().head(15), use_container_width=True)
+    else:
+        st.info("Win% not present; check dataset availability.")
+
 # EDA
 with tabs[1]:
     st.subheader("Season & Team EDA")
@@ -412,10 +459,21 @@ with tabs[1]:
                 stat = st.selectbox("Select stat", numeric_cols, index=0)
                 fig, ax = plt.subplots(figsize=(7, 5)); sns.histplot(season_df[stat].dropna(), kde=True, bins=30, ax=ax); ax.set_title(f"Distribution of {stat}")
                 st.pyplot(fig, use_container_width=True)
+
         st.markdown("---")
-        if "win_pct" in season_df.columns:
-            stat_choice = st.selectbox("Scatter vs Win%", [c for c in ["pts","reb","ast","stl","blk","games"] if c in season_df.columns])
-            fig, ax = plt.subplots(figsize=(8, 5)); sns.scatterplot(data=season_df, x=stat_choice, y="win_pct", alpha=0.35, ax=ax); ax.set_title(f"{stat_choice} vs Team Win%")
+        st.markdown("**Scatter vs Team Win%**")
+        stat_choice = st.selectbox("Scatter vs Win%", [c for c in ["pts","reb","ast","stl","blk","games"] if c in season_df.columns])
+        plot_df = season_df[[stat_choice, "win_pct"]].copy() if "win_pct" in season_df.columns else pd.DataFrame()
+        if not plot_df.empty:
+            plot_df = plot_df.dropna()
+            plot_df = plot_df[(plot_df["win_pct"] > 0) & (plot_df["win_pct"] <= 1)]
+        if plot_df.empty:
+            st.info("No joined Win% available to plot. Verify team-name alignment or dataset coverage.")
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            sns.scatterplot(data=plot_df, x=stat_choice, y="win_pct", alpha=0.35, ax=ax)
+            ax.set_title(f"{stat_choice} vs Team Win%")
+            ax.set_ylim(0, 1)
             st.pyplot(fig, use_container_width=True)
 
 # Player Explorer
