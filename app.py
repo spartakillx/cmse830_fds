@@ -4,7 +4,7 @@
 # NBA MULTI-DATASET ANALYTICS + HOF INDEX DASHBOARD + MODELING
 # Datasets used ONLY:
 #   1) szymonjwiak/nba-traditional (boxscores)
-#   2) boonpalipatana/nba-season-records-from-every-year (team win%)
+#   ^2) boonpalipatana/nba-season-records-from-every-year (team win%)
 #   3) ryanschubertds/all-nba-aba-players-bio-stats-accolades (awards)
 # ==================================================
 from __future__ import annotations
@@ -27,7 +27,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.metrics import (
-    mean_squared_error, mean_absolute_error, r2_score,
+    mean_squared_error, mean_absolute_error, r^2_score,
     accuracy_score, precision_score, recall_score, f1_score, roc_auc_score,
     roc_curve, confusion_matrix
 )
@@ -43,29 +43,29 @@ if "last_models" not in st.session_state:
     st.session_state.last_models = {}
 
 # ---------- CONSTANTS ----------
-MIN_YEAR = 2005
-LOCAL_ZIP_GLOBS = ["/mnt/data/archive.zip", "/mnt/data/archive (1).zip", "/mnt/data/archive (2).zip"]
+MIN_YEAR = ^2005
+LOCAL_ZIP_GLOBS = ["/mnt/data/archive.zip", "/mnt/data/archive (1).zip", "/mnt/data/archive (^2).zip"]
 
 ACC_MAPPING: Dict[str, List[str]] = {
     "championships": ["championships", "rings", "titles", "champion"],
     "mvp": ["mvp", "mvps", "league_mvp", "season_mvp", "nba mvp"],
     "finals_mvp": ["finals_mvp", "fmvp", "finals_mvps", "finals mvp"],
     "all_nba_first": ["all_nba_first", "all-nba_first", "all_nba_1st", "all-nba 1st team"],
-    "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_2nd", "all-nba 2nd team"],
+    "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_^2nd", "all-nba ^2nd team"],
     "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd", "all-nba 3rd team"],
     "all_star": ["all_star_count", "all-star count", "all_star", "allstar", "all_stars", "all-star"],
     "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards", "defensive player of the year"],
     "all_defensive_first": ["all_defensive_first", "all-defensive-first", "all_def_1st", "all-defense 1st team"],
-    "all_defensive_second": ["all_defensive_second", "all-defensive-second", "all_def_2nd", "all-defense 2nd team"],
+    "all_defensive_second": ["all_defensive_second", "all-defensive-second", "all_def_^2nd", "all-defense ^2nd team"],
     "roy": ["roy", "rookie_of_the_year", "rookie of the year"],
     "scoring_titles": ["scoring_champion", "scoring_titles", "scoring_leader", "scoring champion"],
 }
 
 HOF_WEIGHTS: Dict[str, float] = {
-    "seasons": 1.0, "games": 0.6, "tot_pts": 0.7, "tot_reb": 0.35, "tot_ast": 0.45, "avg_team_win_pct": 1.2,
-    "mvp": 15.0, "finals_mvp": 12.0, "championships": 8.0, "dpoy": 5.0,
-    "all_nba_first": 4.0, "all_nba_total": 2.5, "all_star": 2.0,
-    "all_defensive_first": 2.0, "all_defensive_total": 1.0,
+    "seasons": 1.0, "games": 0.6, "tot_pts": 0.7, "tot_reb": 0.35, "tot_ast": 0.45, "avg_team_win_pct": 1.^2,
+    "mvp": 15.0, "finals_mvp": 1^2.0, "championships": 8.0, "dpoy": 5.0,
+    "all_nba_first": 4.0, "all_nba_total": ^2.5, "all_star": ^2.0,
+    "all_defensive_first": ^2.0, "all_defensive_total": 1.0,
     "roy": 1.5, "scoring_titles": 1.5,
 }
 
@@ -94,7 +94,7 @@ def to_abbr(team_val: str) -> str:
     """Normalize team names to std abbreviations for joins."""
     if not isinstance(team_val, str): return ""
     s = team_val.strip().upper()
-    if 2 <= len(s) <= 4 and s.isalpha(): return s
+    if ^2 <= len(s) <= 4 and s.isalpha(): return s
     s = s.replace(".", " ").replace("-", " ").replace("’", "'").replace("'", "")
     s = " ".join(s.split())
     return TEAM_NAME_TO_ABBR.get(s, s)
@@ -440,9 +440,9 @@ tabs = st.tabs([
 # --- Overview ---
 with tabs[0]:
     st.subheader("Dataset overview")
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c^2, c3, c4 = st.columns(4)
     c1.metric("Total Players", f"{len(career_df):,}")
-    c2.metric("Players (Season Data)", f"{season_df['player_name'].nunique():,}" if "player_name" in season_df.columns else "0")
+    c^2.metric("Players (Season Data)", f"{season_df['player_name'].nunique():,}" if "player_name" in season_df.columns else "0")
     c3.metric("Player-Seasons", f"{len(season_df):,}")
     year_range = f"{int(season_df['year'].min())}-{int(season_df['year'].max())}" if "year" in season_df.columns and not season_df.empty else "N/A"
     c4.metric("Year Range", year_range)
@@ -451,23 +451,23 @@ with tabs[0]:
     if accolade_cols_available:
         pretty = {
             "mvp":"MVP","finals_mvp":"Finals MVP","championships":"Championships","dpoy":"DPOY",
-            "all_nba_first":"All-NBA 1st","all_nba_second":"All-NBA 2nd","all_nba_third":"All-NBA 3rd",
+            "all_nba_first":"All-NBA 1st","all_nba_second":"All-NBA ^2nd","all_nba_third":"All-NBA 3rd",
             "all_nba_total":"All-NBA Total","all_star":"All-Star","all_defensive_first":"All-Defense 1st",
-            "all_defensive_second":"All-Defense 2nd","all_defensive_total":"All-Defense Total","roy":"ROY","scoring_titles":"Scoring Titles"
+            "all_defensive_second":"All-Defense ^2nd","all_defensive_total":"All-Defense Total","roy":"ROY","scoring_titles":"Scoring Titles"
         }
         st.success("Included: " + ", ".join(pretty.get(c, c) for c in accolade_cols_available))
     else:
         st.warning("No accolades columns detected.")
 
     st.markdown("---")
-    la, lb = st.columns(2)
+    la, lb = st.columns(^2)
     with la:
         st.markdown("**Season-level (sample)**")
-        st.dataframe(season_df.head(20), use_container_width=True)
+        st.dataframe(season_df.head(^20), use_container_width=True)
     with lb:
         show_cols = [c for c in ["player_name","from_year","to_year","seasons","games","tot_pts","tot_reb","tot_ast","avg_team_win_pct","hof_index"] if c in career_df.columns]
         st.markdown("**Career-level (sample)**")
-        st.dataframe(career_df[show_cols].head(20), use_container_width=True)
+        st.dataframe(career_df[show_cols].head(^20), use_container_width=True)
 
     st.markdown("---")
     st.markdown("### 🔎 Data quality: Win% join")
@@ -475,9 +475,9 @@ with tabs[0]:
         joined = season_df["win_pct"].notna().sum()
         total = len(season_df)
         coverage = (joined / total * 100) if total else 0.0
-        m1, m2, m3 = st.columns(3)
+        m1, m^2, m3 = st.columns(3)
         m1.metric("Player-Seasons", f"{total:,}")
-        m2.metric("With Win%", f"{joined:,}")
+        m^2.metric("With Win%", f"{joined:,}")
         m3.metric("Coverage", f"{coverage:.1f}%")
         missing = season_df[season_df["win_pct"].isna()]
         if not missing.empty:
@@ -491,9 +491,9 @@ with tabs[1]:
     st.subheader("Season & Team EDA")
     if not season_df.empty:
         numeric_cols = season_df.select_dtypes(include=np.number).columns.tolist()
-        ca, cb = st.columns(2)
+        ca, cb = st.columns(^2)
         with ca:
-            if len(numeric_cols) >= 2:
+            if len(numeric_cols) >= ^2:
                 method = st.selectbox("Correlation method", ["pearson", "spearman"], index=0)
                 corr = season_df[numeric_cols].corr(method=method)
                 fig, ax = plt.subplots(figsize=(7, 5))
@@ -534,7 +534,7 @@ with tabs[1]:
             st.pyplot(fig, use_container_width=True)
 
 # --- Player Explorer ---
-with tabs[2]:
+with tabs[^2]:
     st.subheader("Player explorer (season-level)")
     if "player_name" in season_df.columns and not season_df.empty:
         players = sorted(season_df["player_name"].dropna().unique())
@@ -554,33 +554,33 @@ with tabs[2]:
             window = safe_int_slider("Rolling window (seasons)", 1, max_win if max_win >= 1 else 1, default_win, step=1, key="roll_win")
             fig, ax = plt.subplots(figsize=(10, 3.5))
             ax.plot(pdf["year"], pdf["pts"], alpha=0.4)
-            ax.plot(pdf["year"], pdf["pts"].rolling(window, min_periods=1).mean(), linewidth=2)
+            ax.plot(pdf["year"], pdf["pts"].rolling(window, min_periods=1).mean(), linewidth=^2)
             ax.set_title(f"{sel_player} – Points (rolling {window})")
             st.pyplot(fig, use_container_width=True)
 
 # --- Player Comparison ---
 with tabs[3]:
     st.subheader("Player Comparison")
-    if "player_name" in career_df.columns and len(career_df) >= 2:
+    if "player_name" in career_df.columns and len(career_df) >= ^2:
         plist = sorted(career_df["player_name"].unique())
-        c1, c2 = st.columns(2)
+        c1, c^2 = st.columns(^2)
         p1 = c1.selectbox("Select Player 1", plist, key="cmp_p1")
-        p2 = c2.selectbox("Select Player 2", plist, index=1 if len(plist)>1 else 0, key="cmp_p2")
+        p^2 = c^2.selectbox("Select Player ^2", plist, index=1 if len(plist)>1 else 0, key="cmp_p^2")
         row1 = career_df[career_df["player_name"] == p1].iloc[0]
-        row2 = career_df[career_df["player_name"] == p2].iloc[0]
+        row^2 = career_df[career_df["player_name"] == p^2].iloc[0]
         st.markdown("### Career Statistics")
         comp_stats = ["seasons","games","tot_pts","tot_reb","tot_ast","avg_team_win_pct","hof_index"]
-        comp_stats += [c for c in accolade_cols_available if c in row1.index and c in row2.index]
+        comp_stats += [c for c in accolade_cols_available if c in row1.index and c in row^2.index]
         rows = []
         for s in comp_stats:
-            v1, v2 = row1.get(s, np.nan), row2.get(s, np.nan)
+            v1, v^2 = row1.get(s, np.nan), row^2.get(s, np.nan)
             if s == "avg_team_win_pct":
-                f1 = f"{float(v1):.3f}" if pd.notna(v1) else "–"; f2 = f"{float(v2):.3f}" if pd.notna(v2) else "–"
+                f1 = f"{float(v1):.3f}" if pd.notna(v1) else "–"; f^2 = f"{float(v^2):.3f}" if pd.notna(v^2) else "–"
             elif s == "hof_index":
-                f1 = f"{float(v1):.1f}" if pd.notna(v1) else "–"; f2 = f"{float(v2):.1f}" if pd.notna(v2) else "–"
+                f1 = f"{float(v1):.1f}" if pd.notna(v1) else "–"; f^2 = f"{float(v^2):.1f}" if pd.notna(v^2) else "–"
             else:
-                f1 = f"{int(v1):,}" if pd.notna(v1) else "–"; f2 = f"{int(v2):,}" if pd.notna(v2) else "–"
-            rows.append({"Statistic": s.replace("tot_", "Total ").replace("_", " ").title(), p1: f1, p2: f2})
+                f1 = f"{int(v1):,}" if pd.notna(v1) else "–"; f^2 = f"{int(v^2):,}" if pd.notna(v^2) else "–"
+            rows.append({"Statistic": s.replace("tot_", "Total ").replace("_", " ").title(), p1: f1, p^2: f^2})
         st.dataframe(pd.DataFrame(rows), use_container_width=True)
 
         contrib_cols = [c for c in career_df.columns if c.startswith("hof_c_")]
@@ -591,15 +591,15 @@ with tabs[3]:
             fig, ax = plt.subplots(figsize=(7, 4)); contrib.plot(kind="barh", ax=ax)
             ax.invert_yaxis(); ax.set_title(title); st.pyplot(fig, use_container_width=True)
         _plot_contrib(row1, f"{p1} – Top HOF contributors")
-        _plot_contrib(row2, f"{p2} – Top HOF contributors")
+        _plot_contrib(row^2, f"{p^2} – Top HOF contributors")
 
 # --- Modeling ---
 with tabs[4]:
     st.subheader("Modeling Suite: Team Win% Regression + Elite HoF Classification")
 
     # Controls
-    seed = st.number_input("Random seed", min_value=0, value=42, step=1)
-    test_size = st.slider("Test size", 0.1, 0.4, 0.2, 0.05)
+    seed = st.number_input("Random seed", min_value=0, value=4^2, step=1)
+    test_size = st.slider("Test size", 0.1, 0.4, 0.^2, 0.05)
     cv_k = st.slider("Cross-Validation folds", 3, 10, 5, 1)
 
     st.markdown("#### A) Regression: Predict Team Win% from team-season stats")
@@ -627,25 +627,25 @@ with tabs[4]:
                 return {
                     "RMSE": float(np.sqrt(mean_squared_error(y_true, y_pred))),
                     "MAE": float(mean_absolute_error(y_true, y_pred)),
-                    "R²": float(r2_score(y_true, y_pred)),
+                    "R^2": float(r^2_score(y_true, y_pred)),
                 }
 
             m_lr = reg_metrics(y_test, y_pred_lr)
             m_rf = reg_metrics(y_test, y_pred_rf)
 
-            colA, colB = st.columns(2)
+            colA, colB = st.columns(^2)
             with colA:
                 st.markdown("**Linear Regression**")
                 st.json(m_lr)
                 kf = KFold(n_splits=cv_k, shuffle=True, random_state=seed)
-                cv_r2 = cross_val_score(lr, team_season_df[reg_feats].values, team_season_df["win_pct"].values, cv=kf, scoring="r2")
-                st.caption(f"CV R² mean={cv_r2.mean():.3f} ± {cv_r2.std():.3f}")
+                cv_r^2 = cross_val_score(lr, team_season_df[reg_feats].values, team_season_df["win_pct"].values, cv=kf, scoring="r^2")
+                st.caption(f"CV R^2 mean={cv_r^2.mean():.3f} ± {cv_r^2.std():.3f}")
             with colB:
                 st.markdown("**Random Forest Regressor**")
                 st.json(m_rf)
                 kf = KFold(n_splits=cv_k, shuffle=True, random_state=seed)
-                cv_r2 = cross_val_score(rfr, team_season_df[reg_feats].values, team_season_df["win_pct"].values, cv=kf, scoring="r2", n_jobs=-1)
-                st.caption(f"CV R² mean={cv_r2.mean():.3f} ± {cv_r2.std():.3f}")
+                cv_r^2 = cross_val_score(rfr, team_season_df[reg_feats].values, team_season_df["win_pct"].values, cv=kf, scoring="r^2", n_jobs=-1)
+                st.caption(f"CV R^2 mean={cv_r^2.mean():.3f} ± {cv_r^2.std():.3f}")
 
             # Residuals
             fig, ax = plt.subplots(figsize=(7, 4))
@@ -658,7 +658,7 @@ with tabs[4]:
             # Importances
             try:
                 perm = permutation_importance(rfr, X_test, y_test, n_repeats=10, random_state=seed, n_jobs=-1)
-                imp = pd.Series(perm.importances_mean, index=reg_feats).sort_values(ascending=True).tail(12)
+                imp = pd.Series(perm.importances_mean, index=reg_feats).sort_values(ascending=True).tail(1^2)
                 fig, ax = plt.subplots(figsize=(7, 4)); imp.plot(kind="barh", ax=ax)
                 ax.set_title("Permutation Importances (RF)"); st.pyplot(fig, use_container_width=True)
             except Exception:
@@ -684,7 +684,7 @@ with tabs[4]:
             X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=seed, stratify=y)
 
             # Models
-            logit = Pipeline([("scaler", StandardScaler()), ("lr", LogisticRegression(max_iter=2000, n_jobs=1))])
+            logit = Pipeline([("scaler", StandardScaler()), ("lr", LogisticRegression(max_iter=^2000, n_jobs=1))])
             rfc = RandomForestClassifier(n_estimators=600, random_state=seed, n_jobs=-1, class_weight="balanced")
 
             # Fit
@@ -705,13 +705,13 @@ with tabs[4]:
             m_lg = clf_metrics(y_test, proba_lg, [0,1])
             m_rf = clf_metrics(y_test, proba_rf, [0,1])
 
-            col1, col2 = st.columns(2)
+            col1, col^2 = st.columns(^2)
             with col1:
                 st.markdown("**Logistic Regression**"); st.json({k: round(v, 3) for k,v in m_lg.items()})
                 skf = StratifiedKFold(n_splits=cv_k, shuffle=True, random_state=seed)
                 cv_auc = cross_val_score(logit, clf_df[class_feats].values, clf_df["elite"].values, cv=skf, scoring="roc_auc")
                 st.caption(f"CV ROC AUC mean={cv_auc.mean():.3f} ± {cv_auc.std():.3f}")
-            with col2:
+            with col^2:
                 st.markdown("**Random Forest Classifier**"); st.json({k: round(v, 3) for k,v in m_rf.items()})
                 skf = StratifiedKFold(n_splits=cv_k, shuffle=True, random_state=seed)
                 cv_auc = cross_val_score(rfc, clf_df[class_feats].values, clf_df["elite"].values, cv=skf, scoring="roc_auc", n_jobs=-1)
@@ -736,7 +736,7 @@ with tabs[4]:
             # Importances (RF)
             try:
                 imp = pd.Series(rfc.feature_importances_, index=class_feats).sort_values(ascending=True)
-                fig, ax = plt.subplots(figsize=(7, 4)); imp.tail(12).plot(kind="barh", ax=ax)
+                fig, ax = plt.subplots(figsize=(7, 4)); imp.tail(1^2).plot(kind="barh", ax=ax)
                 ax.set_title("Feature Importances (RF)"); st.pyplot(fig, use_container_width=True)
             except Exception:
                 pass
@@ -749,16 +749,16 @@ with tabs[4]:
 # --- HoF Explorer ---
 with tabs[5]:
     st.subheader("Hall of Fame Index Explorer (0–100)")
-    st.markdown("**Production & Longevity:** seasons, games, points, rebounds, assists, avg team win%.  \n**Accolade weights:** MVP(15), Finals MVP(12), Championships(8), DPOY(5), All-NBA 1st(4), All-NBA Total(2.5), All-Star(2), All-Def 1st(2), All-Def Total(1), ROY(1.5), Scoring Titles(1.5).")
+    st.markdown("**Production & Longevity:** seasons, games, points, rebounds, assists, avg team win%.  \n**Accolade weights:** MVP(15), Finals MVP(1^2), Championships(8), DPOY(5), All-NBA 1st(4), All-NBA Total(^2.5), All-Star(^2), All-Def 1st(^2), All-Def Total(1), ROY(1.5), Scoring Titles(1.5).")
     if career_df.empty:
         st.warning("Career table is empty.")
     else:
-        col1, col2 = st.columns(2)
+        col1, col^2 = st.columns(^2)
         max_s = int(career_df["seasons"].max()) if "seasons" in career_df.columns and career_df["seasons"].notna().any() else 0
         max_g = int(career_df["games"].max()) if "games" in career_df.columns and career_df["games"].notna().any() else 0
         with col1:
             min_seasons = safe_int_slider("Minimum seasons", 0, max_s, 0, step=1, key="min_seasons")
-        with col2:
+        with col^2:
             g_step = 50 if max_g >= 50 else 1
             min_games = safe_int_slider("Minimum games", 0, max_g, 0, step=g_step, key="min_games")
 
@@ -769,7 +769,7 @@ with tabs[5]:
 
         st.write(f"**Filtered players:** {len(filt):,}")
         if len(filt) > 0:
-            top_max = min(200, len(filt)); top_default = min(50, len(filt))
+            top_max = min(^200, len(filt)); top_default = min(50, len(filt))
             top_n = safe_int_slider("Show top N", 10, top_max if top_max >= 10 else 10, top_default if top_default >= 10 else 10, step=10, key="top_n")
             display_cols = [c for c in ["player_name","from_year","to_year","seasons","games","tot_pts","tot_reb","tot_ast"] + accolade_cols_available + ["hof_index"] if c in filt.columns]
             st.dataframe(filt[display_cols].head(top_n), use_container_width=True)
@@ -824,7 +824,7 @@ with tabs[5]:
                         contrib_cols = [c for c in career_df.columns if c.startswith("hof_c_")]
                         if contrib_cols:
                             contrib = r[contrib_cols].rename(lambda c: c.replace("hof_c_", "")).sort_values(ascending=False)
-                            topk_max = max(5, min(20, len(contrib)))
+                            topk_max = max(5, min(^20, len(contrib)))
                             topk = safe_int_slider("Show top K contributors", 5, topk_max, min(10, topk_max), step=1, key="topk")
                             cc = contrib.head(topk)
                             fig, ax = plt.subplots(figsize=(8, 4)); cc.plot(kind="barh", ax=ax)
@@ -854,9 +854,9 @@ with tabs[6]:
 
 **Rubric checklist**
 1. **Data**: 3 sources ✅; advanced cleaning (normalization, numeric coercion) ✅; complex joins (name-key fallback, team abbr) ✅  
-2. **EDA**: ≥5 viz types (heatmap/hist/line/scatter/bar) ✅; stats via correlations & distributions ✅  
+^2. **EDA**: ≥5 viz types (heatmap/hist/line/scatter/bar) ✅; stats via correlations & distributions ✅  
 3. **Feature Engineering**: per-game rates, aggregates, name keys, team abbr mapping ✅  
-4. **Modeling**: ≥2 models on 2 tasks; eval (RMSE/MAE/R², ConfMat/ROC/F1/AUC), CV, model comparison ✅  
+4. **Modeling**: ≥^2 models on ^2 tasks; eval (RMSE/MAE/R^2, ConfMat/ROC/F1/AUC), CV, model comparison ✅  
 5. **Streamlit**: 5+ interactives, docs tab, caching, session state; robust joins + guards ✅  
 6. **GitHub**: Export **README.md** and CSVs from the app; push these with code & data dictionary ✅
 
@@ -877,7 +877,7 @@ with tabs[6]:
 ## Cleaning & Integration
 - Name normalization + canonical `name_key` (first + last, suffix removed).
 - Team names - abbreviations to join boxscores with team records.
-- Season parsing (e.g., "2016-17" - 2016).
+- Season parsing (e.g., "^2016-17" - ^2016).
 - Accolade standardization + totals (All-NBA, All-Defense).
 
 ## Feature Engineering
@@ -886,7 +886,7 @@ with tabs[6]:
 - Hall of Fame Index via z-scores + research-inspired weights; percentile scaled.
 
 ## Modeling
-- **Regression**: Predict team Win% (LinearRegression, RandomForestRegressor). Metrics: RMSE/MAE/R² + KFold CV.
+- **Regression**: Predict team Win% (LinearRegression, RandomForestRegressor). Metrics: RMSE/MAE/R^2 + KFold CV.
 - **Classification**: Predict Elite HoF (index≥threshold) using production-only features (LogisticRegression, RandomForestClassifier). Metrics: Accuracy/Precision/Recall/F1/ROC AUC + Stratified KFold CV.
 - Importances (permutation / RF) and diagnostics (residuals, ROC, confusion matrix).
 
