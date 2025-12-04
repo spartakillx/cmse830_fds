@@ -507,7 +507,7 @@ class GaussianNB:
 
 # ------------------------- UI TABS -------------------------
 tabs = st.tabs([
-    "Overview", "EDA (Season & Team)", "Player Explorer", "Player Comparison", "Modeling", "Hall of Fame Explorer", "About & Guide"
+    "Overview", "EDA (Season & Team)", "Player Explorer", "Player Comparison", "Modeling", "Hall of Fame Explorer"
 ])
 
 # --- Overview ---
