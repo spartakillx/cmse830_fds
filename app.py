@@ -871,7 +871,7 @@ with tabs[6]:
 
 ## Data
 - szymonjwiak/nba-traditional (player boxscores, season_id → year)
-- boonpalipatana/nba-season-records-from-every-year (team wins/losses → win_pct; normalized to abbreviations)
+- boonpalipatana/nba-season-records-from-every-year (team wins/losses - win_pct; normalized to abbreviations)
 - ryanschubertds/all-nba-aba-players-bio-stats-accolades (awards; standardized + name-key fallback)
 
 ## Cleaning & Integration
