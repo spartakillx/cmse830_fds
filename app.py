@@ -64,24 +64,28 @@ def load_all_raw():
     seasons_raw = load_kaggle_csv("boonpalipatana/nba-season-records-from-every-year")
     
     # Load COMPREHENSIVE accolades dataset (has everything!)
+    accolades_raw = pd.DataFrame()
     try:
         accolades_raw = load_kaggle_csv("ryanschubertds/all-nba-aba-players-bio-stats-accolades")
-        st.success("✅ Loaded comprehensive accolades dataset (MVP, Championships, Finals MVP, DPOY, All-NBA, All-Defense, etc.)")
+        st.success(f"✅ Loaded comprehensive accolades dataset: {len(accolades_raw)} rows, columns: {list(accolades_raw.columns)[:10]}")
     except Exception as e:
         st.warning(f"⚠️ Comprehensive accolades dataset not found: {e}")
-        accolades_raw = pd.DataFrame()
     
     # Load MVP voting dataset as backup
+    mvp_raw = pd.DataFrame()
     try:
         mvp_raw = load_kaggle_csv("robertsunderhaft/nba-player-season-statistics-with-mvp-win-share")
-    except:
-        mvp_raw = pd.DataFrame()
+        st.info(f"Loaded MVP dataset: {len(mvp_raw)} rows")
+    except Exception as e:
+        st.warning(f"MVP dataset not available: {e}")
     
     # Load All-Star data
+    allstar_raw = pd.DataFrame()
     try:
         allstar_raw = load_kaggle_csv("ahmedbendaly/nba-all-star-game-data", prefer_contains="players")
-    except:
-        allstar_raw = pd.DataFrame()
+        st.info(f"Loaded All-Star dataset: {len(allstar_raw)} rows")
+    except Exception as e:
+        st.warning(f"All-Star dataset not available: {e}")
 
     return players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw
 
