@@ -74,7 +74,6 @@ def build_clean_tables():
     players.columns = players.columns.str.strip().str.lower()
 
     box = boxscores_raw.copy()
-    # lower case everything so we don't fight with Season vs SEASON vs season
     box.columns = box.columns.str.strip().str.lower()
 
     seasons = seasons_raw.copy()
@@ -173,7 +172,6 @@ def build_clean_tables():
         "pts", "reb", "ast", "stl", "blk", "tov", "min"
     ] if c in box.columns]
 
-    # only dropna on subset columns that actually exist
     subset_cols = [c for c in ["season", "player_name"] if c in keep_cols]
 
     box = box[keep_cols]
@@ -196,7 +194,6 @@ def build_clean_tables():
         else:
             box["season_start"] = box["season"]
     else:
-        # if we somehow have no season after all that, bail gracefully
         box["season_start"] = np.nan
 
     box = box.dropna(subset=["season_start"])
@@ -209,7 +206,7 @@ def build_clean_tables():
         if c in box.columns:
             agg_dict[c] = "sum"
     if "game_id" in box.columns:
-        agg_dict["game_id"] = pd.Series.nunique  # games played
+        agg_dict["game_id"] = pd.Series.nunique
 
     season_player = (
         box.groupby(["season_start", "player_name", "team"], as_index=False)
@@ -220,13 +217,10 @@ def build_clean_tables():
     # --------------------------------------------------
     # 1.c TEAM SEASON RECORDS (wins / losses / win%)
     # --------------------------------------------------
-    # season / year
     if "season" in seasons.columns and "year" not in seasons.columns:
         seasons = seasons.rename(columns={"season": "year"})
-    # team
     if "team_name" in seasons.columns and "team" not in seasons.columns:
         seasons = seasons.rename(columns={"team_name": "team"})
-    # win%
     if "win%" in seasons.columns and "win_pct" not in seasons.columns:
         seasons = seasons.rename(columns={"win%": "win_pct"})
 
@@ -255,44 +249,35 @@ def build_clean_tables():
     # --------------------------------------------------
     # 1.e BUILD CAREER TABLE FROM SEASON-MERGED
     # --------------------------------------------------
-    # Build the aggregation dict dynamically based on what columns exist
     career_agg_dict = {
         "year": ["min", "max", "nunique"]
     }
     
-    # Add games column if it exists
     if "games" in season_merged.columns:
         career_agg_dict["games"] = "sum"
     
-    # Add stat columns if they exist
     for stat_col in ["pts", "reb", "ast", "stl", "blk", "tov"]:
         if stat_col in season_merged.columns:
             career_agg_dict[stat_col] = "sum"
     
-    # Add win_pct if it exists
     if "win_pct" in season_merged.columns:
         career_agg_dict["win_pct"] = "mean"
     
-    # Perform the aggregation
     career_from_box = season_merged.groupby("player_name").agg(career_agg_dict).reset_index()
     
-    # Flatten multi-level columns and rename
     if isinstance(career_from_box.columns, pd.MultiIndex):
         career_from_box.columns = ['_'.join(str(c) for c in col).strip('_') if col[1] else col[0] 
                                     for col in career_from_box.columns.values]
     
-    # Rename columns to standard names
     rename_dict = {
         "year_min": "from_year",
         "year_max": "to_year",
         "year_nunique": "seasons"
     }
     
-    # Add games rename if it exists
     if "games_sum" in career_from_box.columns:
         rename_dict["games_sum"] = "games"
     
-    # Add stat renames
     for stat in ["pts", "reb", "ast", "stl", "blk", "tov"]:
         if f"{stat}_sum" in career_from_box.columns:
             rename_dict[f"{stat}_sum"] = f"tot_{stat}"
@@ -302,11 +287,9 @@ def build_clean_tables():
     
     career_from_box = career_from_box.rename(columns=rename_dict)
     
-    # If games column doesn't exist, create it from counting seasons
     if "games" not in career_from_box.columns:
         career_from_box["games"] = 0
 
-    # Merge extra career info from players dataset if names align
     if "player_name" in career.columns:
         base_cols = ["player_name"]
         extra_cols = [c for c in career.columns if c not in base_cols]
@@ -320,7 +303,6 @@ def build_clean_tables():
     else:
         career_all = career_from_box.copy()
 
-    # Clean numeric where possible
     for c in career_all.columns:
         if career_all[c].dtype == "object":
             maybe_num = pd.to_numeric(career_all[c], errors="ignore")
@@ -350,12 +332,6 @@ season_df, team_df, career_df = build_clean_tables()
 def add_hof_index(career: pd.DataFrame) -> pd.DataFrame:
     """
     Construct a Hall-of-Fame style index using *all* players.
-    We use features:
-      - seasons
-      - games
-      - tot_pts, tot_reb, tot_ast
-      - avg_team_win_pct
-    Then convert to percentile [0, 100].
     """
     df = career.copy()
 
@@ -363,16 +339,21 @@ def add_hof_index(career: pd.DataFrame) -> pd.DataFrame:
         "seasons", "games", "tot_pts", "tot_reb", "tot_ast", "avg_team_win_pct"
     ] if c in df.columns]
 
+    if not feature_cols:
+        df["hof_index"] = 0.0
+        return df
+
     X = df[feature_cols].fillna(0).astype(float)
 
-    # z-score manually
-    z = (X - X.mean()) / X.std(ddof=0)
+    # z-score
+    z = (X - X.mean()) / (X.std(ddof=0) + 1e-10)
     z = z.fillna(0.0)
 
     raw_score = z.sum(axis=1)
+    
+    # Convert to 0-100 percentile
     ranks = raw_score.rank(method="average", pct=True)
     df["hof_index"] = (ranks * 100).astype(float)
-    df["hof_index_rounded"] = df["hof_index"].round(1)
 
     return df
 
@@ -467,7 +448,7 @@ with tabs[1]:
         ax.set_title(f"{sel_team} – win% over time")
         st.pyplot(fig)
     else:
-        st.info("Team win% columns not found in team dataset – adjust column names in build_clean_tables() if needed.")
+        st.info("Team win% columns not found in team dataset.")
 
 # ==================================================
 # TAB 3: PLAYER EXPLORER
@@ -526,7 +507,6 @@ with tabs[3]:
                 val1 = p1_career[stat]
                 val2 = p2_career[stat]
                 
-                # Handle NaN values
                 val1 = val1 if not pd.isna(val1) else 0
                 val2 = val2 if not pd.isna(val2) else 0
                 
@@ -618,17 +598,14 @@ with tabs[4]:
         sel_team2 = st.selectbox("Select team", team_list2)
         tdf2 = season_df[season_df["team"] == sel_team2]
 
-        # Build aggregation dict more carefully
         agg_cols2 = {}
         for c in ["pts", "reb", "ast"]:
             if c in tdf2.columns:
                 agg_cols2[c] = "sum"
         
-        # Handle games separately
         if "games" in tdf2.columns:
             agg_cols2["games"] = "sum"
         
-        # Only aggregate if we have something to aggregate
         if agg_cols2:
             team_season_stats = (
                 tdf2.groupby("year")
@@ -636,7 +613,6 @@ with tabs[4]:
                 .reset_index()
             )
         else:
-            # If no columns to aggregate, just count
             team_season_stats = (
                 tdf2.groupby("year")
                 .size()
@@ -654,97 +630,63 @@ with tabs[4]:
             ax.set_title(f"{sel_team2} – total points per season")
             st.pyplot(fig)
     else:
-        st.info("No 'team' column in season-level data. Check column mappings in build_clean_tables().")
+        st.info("No 'team' column in season-level data.")
 
 # ==================================================
 # TAB 6: HALL OF FAME EXPLORER
 # ==================================================
 with tabs[5]:
-    st.subheader("Hall of Fame Explorer (Index 0–100)")
+    st.subheader("Hall of Fame Index Explorer (0-100 scale)")
 
     st.markdown(
         """
-**Hall of Fame Index** is a relative, data-driven score built from:
+**Hall of Fame Index** is a relative, data-driven score (0-100) built from:
 
 - Career **seasons** and **games** (longevity)  
 - Total **points**, **rebounds**, **assists** (production)  
-- Average **team win%** over the player's seasons  
+- Average **team win%** over the player's seasons (team success)
 
-We standardize each metric, sum them, and then convert the result to a **percentile (0–100)**  
+We standardize each metric, sum them, and convert to a **percentile (0-100)**  
 across *all players in the dataset*. Higher = more Hall-of-Fame-like profile.
 """
     )
 
-    min_seasons = st.slider("Min seasons", min_value=1, max_value=20, value=3)
-    min_games = st.slider("Min career games", min_value=1, max_value=1500, value=100, step=50)
-
-    career_eligible = career_df.copy()
-    if "seasons" in career_eligible.columns:
-        career_eligible = career_eligible[career_eligible["seasons"] >= min_seasons]
-    if "games" in career_eligible.columns:
-        career_eligible = career_eligible[career_eligible["games"] >= min_games]
-
-    if "hof_index" not in career_eligible.columns:
-        career_eligible = add_hof_index(career_eligible)
-
-    career_eligible = career_eligible.sort_values("hof_index", ascending=False)
-
-    # Player inspector
-    all_players_career = sorted(career_eligible["player_name"].dropna().unique())
-    st.markdown("### Inspect a player")
-    if all_players_career:
-        sel_player_hof = st.selectbox("Choose player", all_players_career)
-
-        prow = career_eligible[career_eligible["player_name"] == sel_player_hof]
-        if not prow.empty:
-            prow = prow.iloc[0]
-
-            st.markdown(f"#### {sel_player_hof}")
-            c1, c2, c3 = st.columns(3)
-            with c1:
-                st.write("Seasons:", int(prow.get("seasons", np.nan)) if not pd.isna(prow.get("seasons", np.nan)) else "NA")
-                st.write("Games:", int(prow.get("games", np.nan)) if not pd.isna(prow.get("games", np.nan)) else "NA")
-            with c2:
-                st.write("Total points:", int(prow.get("tot_pts", np.nan)) if not pd.isna(prow.get("tot_pts", np.nan)) else "NA")
-                st.write("Total rebounds:", int(prow.get("tot_reb", np.nan)) if not pd.isna(prow.get("tot_reb", np.nan)) else "NA")
-                st.write("Total assists:", int(prow.get("tot_ast", np.nan)) if not pd.isna(prow.get("tot_ast", np.nan)) else "NA")
-            with c3:
-                hof_val = float(prow["hof_index"])
-                st.write("HoF Index (0–100):", f"{hof_val:.1f}")
-                if hof_val >= 90:
-                    verdict = "🚀 Inner-circle HoF profile"
-                elif hof_val >= 75:
-                    verdict = "⭐ Strong HoF-like profile"
-                elif hof_val >= 50:
-                    verdict = "🙂 Solid career"
-                else:
-                    verdict = "📈 Role player / limited impact"
-                st.write("Verdict:", verdict)
-
-    # Top 100
-    st.markdown("### Top players by HoF Index")
-    cols_to_show = [c for c in [
-        "player_name", "from_year", "to_year", "seasons", "games",
-        "tot_pts", "tot_reb", "tot_ast", "avg_team_win_pct",
-        "hof_index_rounded"
-    ] if c in career_eligible.columns]
-
-    st.dataframe(
-        career_eligible[cols_to_show]
-        .rename(columns={"hof_index_rounded": "hof_index"})
-        .reset_index(drop=True)
-        .head(100)
-    )
-
-    # Download cleaned career table
-    st.markdown("### Download cleaned career-level table")
-
-    def to_csv_bytes(df_to_save: pd.DataFrame) -> bytes:
-        return df_to_save.to_csv(index=False).encode("utf-8")
-
-    st.download_button(
-        "⬇️ Download career table with HoF Index",
-        data=to_csv_bytes(career_df),
-        file_name="career_with_hof_index.csv",
-        mime="text/csv"
-    )
+    if career_df.empty:
+        st.warning("Career table is empty – check data loading.")
+    else:
+        st.write(f"**Total players in dataset: {len(career_df):,}**")
+        st.write(f"**Available columns:** {', '.join(career_df.columns.tolist()[:15])}")
+        
+        # Filter options
+        col1, col2 = st.columns(2)
+        
+        has_seasons = "seasons" in career_df.columns
+        has_games = "games" in career_df.columns
+        
+        with col1:
+            if has_seasons:
+                max_s = int(career_df["seasons"].max()) if career_df["seasons"].notna().any() else 20
+                min_seasons = st.slider("Minimum seasons", 0, max_s, 0)
+            else:
+                min_seasons = 0
+                st.info("'seasons' column not found")
+        
+        with col2:
+            if has_games:
+                max_g = int(career_df["games"].max()) if career_df["games"].notna().any() else 1500
+                min_games = st.slider("Minimum games", 0, max_g, 0, step=50)
+            else:
+                min_games = 0
+                st.info("'games' column not found")
+        
+        # Apply filters
+        career_filtered = career_df.copy()
+        if has_seasons and min_seasons > 0:
+            career_filtered = career_filtered[career_filtered["seasons"].fillna(0) >= min_seasons]
+        if has_games and min_games > 0:
+            career_filtered = career_filtered[career_filtered["games"].fillna(0) >= min_games]
+        
+        if "hof_index" in career_filtered.columns:
+            career_filtered = career_filtered.sort_values("hof_index", ascending=False)
+        
+        st.write
