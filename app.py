@@ -45,12 +45,19 @@ ACC_MAPPING: Dict[str, List[str]] = {
 }
 
 HOF_WEIGHTS: Dict[str, float] = {
+    # production & context
     "seasons": 1.0, "games": 0.6, "tot_pts": 0.7, "tot_reb": 0.35, "tot_ast": 0.45, "avg_team_win_pct": 1.2,
+    # accolades (why: priors from HoF signal importance)
     "mvp": 15.0, "finals_mvp": 12.0, "championships": 8.0, "dpoy": 5.0,
     "all_nba_first": 4.0, "all_nba_total": 2.5, "all_star": 2.0,
     "all_defensive_first": 2.0, "all_defensive_total": 1.0,
     "roy": 1.5, "scoring_titles": 1.5,
 }
+
+ALL_POSSIBLE_ACCS = [
+    "mvp","finals_mvp","championships","dpoy","all_nba_first","all_nba_second","all_nba_third","all_nba_total",
+    "all_star","all_defensive_first","all_defensive_second","all_defensive_total","roy","scoring_titles"
+]
 
 # ---------- HELPERS ----------
 def _safe_to_int(x) -> Optional[int]:
@@ -84,6 +91,24 @@ def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step
     step = max(1, int(step))
     value = min(max(value, min_value), max_value)
     return st.slider(label, min_value=min_value, max_value=max_value, value=value, step=step, key=key)
+
+def canonical_name_key(name: str) -> str:
+    """
+    Canonical key for cross-dataset joins (why: fix 'Kobe Bean Bryant' vs 'Kobe Bryant').
+    - lowercase, letters/spaces only
+    - drop suffixes (jr/sr/ii/iii/iv/v)
+    - keep FIRST + LAST token only
+    """
+    if not isinstance(name, str):
+        return ""
+    s = name.strip().lower()
+    s = "".join(ch for ch in s if ch.isalpha() or ch.isspace())
+    tokens = [t for t in s.split() if t]
+    suffixes = {"jr","sr","ii","iii","iv","v"}
+    tokens = [t for t in tokens if t not in suffixes]
+    if not tokens: return ""
+    if len(tokens) == 1: return tokens[0]
+    return f"{tokens[0]} {tokens[-1]}"
 
 # ---------- LOADING (Kaggle + local zip fallback) ----------
 def _list_csvs_in_zip(zip_path: str) -> List[str]:
@@ -207,13 +232,13 @@ def load_accolades() -> pd.DataFrame:
             df = _read_csv_from_zip(zp, "accolade") or _read_csv_from_zip(zp, "all-nba")
             if df is not None: break
         if df is None:
-            return pd.DataFrame(columns=["player_name"])
+            return pd.DataFrame(columns=["player_name","name_key"])
     df.columns = df.columns.str.strip().str.lower()
     name_col = _first_existing_column(df, ["player", "player_name", "name"])
     if name_col:
         df = df.rename(columns={name_col: "player_name"})
     else:
-        return pd.DataFrame(columns=["player_name"])
+        return pd.DataFrame(columns=["player_name","name_key"])
     df["player_name"] = _normalize_names(df["player_name"])
     standard_cols = {}
     for canonical, candidates in ACC_MAPPING.items():
@@ -223,7 +248,9 @@ def load_accolades() -> pd.DataFrame:
     df = df.rename(columns=standard_cols)
     acc_cols = [c for c in ACC_MAPPING.keys() if c in df.columns]
     if not acc_cols:
-        return df[["player_name"]].drop_duplicates()
+        agg = df[["player_name"]].drop_duplicates()
+        agg["name_key"] = agg["player_name"].apply(canonical_name_key)
+        return agg
     for c in acc_cols:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
     agg = df.groupby("player_name", as_index=False)[acc_cols].sum()
@@ -233,6 +260,7 @@ def load_accolades() -> pd.DataFrame:
     if set(["all_defensive_first", "all_defensive_second"]).intersection(agg.columns):
         cols = [c for c in ["all_defensive_first", "all_defensive_second"] if c in agg.columns]
         agg["all_defensive_total"] = agg[cols].sum(axis=1)
+    agg["name_key"] = agg["player_name"].apply(canonical_name_key)
     return agg
 
 # ---------- BUILD TABLES ----------
@@ -242,6 +270,7 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     teams = load_team_records()
     acc = load_accolades()
 
+    # player-season
     if box.empty or "year" not in box.columns or "player_name" not in box.columns:
         season_df = pd.DataFrame()
     else:
@@ -252,10 +281,11 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             agg_dict["games"] = pd.Series.nunique
         gb_cols = [c for c in ["year", "player_name", "team"] if c in box.columns]
         season_df = box.groupby(gb_cols, as_index=False).agg(agg_dict)
+    # merge team win%
+    if not season_df.empty and not teams.empty and set(["year","team"]).issubset(teams.columns):
+        season_df = season_df.merge(teams, on=["year","team"], how="left")
 
-    if not season_df.empty and not teams.empty and set(["year", "team"]).issubset(teams.columns):
-        season_df = season_df.merge(teams, on=["year", "team"], how="left")
-
+    # career aggregate
     if season_df.empty:
         career_df = pd.DataFrame(columns=["player_name"])
     else:
@@ -265,18 +295,37 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
             "seasons": ("year", "nunique"),
         }
         if "games" in season_df.columns: career_agg["games"] = ("games", "sum")
-        for c in ["pts", "reb", "ast", "stl", "blk"]:
+        for c in ["pts","reb","ast","stl","blk"]:
             if c in season_df.columns: career_agg[f"tot_{c}"] = (c, "sum")
         if "win_pct" in season_df.columns: career_agg["avg_team_win_pct"] = ("win_pct", "mean")
         career_df = season_df.groupby("player_name").agg(**career_agg).reset_index()
 
-    if not career_df.empty and not acc.empty:
-        career_df = career_df.merge(acc, on="player_name", how="left")
-        acc_cols_set = set(ACC_MAPPING.keys()) | {"all_nba_total", "all_defensive_total"}
-        for c in career_df.columns:
-            if c in acc_cols_set: career_df[c] = career_df[c].fillna(0)
+    # name key on career
+    if not career_df.empty and "player_name" in career_df.columns:
+        career_df["name_key"] = career_df["player_name"].apply(canonical_name_key)
 
-    for c in ["from_year", "to_year", "seasons", "games", "tot_pts", "tot_reb", "tot_ast", "tot_stl", "tot_blk"]:
+    # two-step accolades merge (exact, then key)
+    award_cols_set = set(ACC_MAPPING.keys()) | {"all_nba_total","all_defensive_total"}
+    award_cols = [c for c in acc.columns if c in award_cols_set]
+
+    if not acc.empty and not career_df.empty:
+        merged = career_df.merge(acc[["player_name"] + ([ "name_key" ] if "name_key" in acc.columns else []) + award_cols],
+                                 on="player_name", how="left", suffixes=("", "_acc"))
+        if award_cols:
+            need_fill = merged[award_cols].isna().all(axis=1)
+            if "name_key" in merged.columns and "name_key" in acc.columns and need_fill.any():
+                acc_key = acc[["name_key"] + award_cols].drop_duplicates()
+                fallback = merged.loc[need_fill, ["name_key"]].merge(acc_key, on="name_key", how="left")
+                for col in award_cols:
+                    merged.loc[need_fill, col] = fallback[col].values
+        career_df = merged
+
+    # fill award NaNs to 0
+    for c in award_cols:
+        career_df[c] = pd.to_numeric(career_df[c], errors="coerce").fillna(0)
+
+    # coerce numerics
+    for c in ["from_year","to_year","seasons","games","tot_pts","tot_reb","tot_ast","tot_stl","tot_blk"]:
         if c in career_df.columns: career_df[c] = pd.to_numeric(career_df[c], errors="coerce")
     if "avg_team_win_pct" in career_df.columns:
         career_df["avg_team_win_pct"] = pd.to_numeric(career_df["avg_team_win_pct"], errors="coerce")
@@ -288,10 +337,10 @@ season_df, team_df, career_df = build_tables()
 # ---------- HOF INDEX ----------
 def compute_hof_index(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
-        return pd.DataFrame(columns=["player_name", "hof_index"])
-    use_cols = [c for c in ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", "avg_team_win_pct"] if c in df.columns]
-    use_cols += [c for c in ["mvp", "finals_mvp", "championships", "dpoy", "all_nba_first", "all_nba_total",
-                             "all_star", "all_defensive_first", "all_defensive_total", "roy", "scoring_titles"] if c in df.columns]
+        return pd.DataFrame(columns=["player_name","hof_index"])
+    use_cols = [c for c in ["seasons","games","tot_pts","tot_reb","tot_ast","avg_team_win_pct"] if c in df.columns]
+    use_cols += [c for c in ["mvp","finals_mvp","championships","dpoy","all_nba_first","all_nba_total",
+                             "all_star","all_defensive_first","all_defensive_total","roy","scoring_titles"] if c in df.columns]
     if not use_cols:
         out = df.copy(); out["hof_index"] = 0.0; return out
 
@@ -311,7 +360,6 @@ def compute_hof_index(df: pd.DataFrame) -> pd.DataFrame:
     return out
 
 career_df = compute_hof_index(career_df)
-ALL_POSSIBLE_ACCS = ["mvp","finals_mvp","championships","dpoy","all_nba_first","all_nba_second","all_nba_third","all_nba_total","all_star","all_defensive_first","all_defensive_second","all_defensive_total","roy","scoring_titles"]
 accolade_cols_available = [c for c in ALL_POSSIBLE_ACCS if c in career_df.columns]
 
 # ---------- UI TABS (Team Trends removed) ----------
@@ -490,7 +538,7 @@ with tabs[4]:
                     else: verdict, color = "📊 Role player", "lightgray"
                     st.markdown(f"**{verdict}**")
                     fig, ax = plt.subplots(figsize=(8, 1.6))
-                    ax.barh([0], [hof_idx], height=0.5, color=color)
+                    ax.barh([0], [hof_idx], height=0.5, color=color)  # why: fast perception of score
                     ax.set_xlim(0, 100); ax.set_yticks([]); ax.set_xlabel("HoF Index (0–100)")
                     ax.axvline(x=50, color='gray', linestyle='--', alpha=0.3, label='Avg')
                     ax.axvline(x=85, color='blue', linestyle='--', alpha=0.3, label='Strong')
