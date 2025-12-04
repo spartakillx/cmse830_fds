@@ -1,884 +1,822 @@
-"""
-NBA Analytics & Hall of Fame Index Dashboard
-CMSE 830 Final Project - FIXED VERSION
-Author: Aditya Sudarsan Anand
-
-**FIXED:** Added proper error handling for all imports
-This version will run without requiring external API calls.
-"""
-
+# ==================================================
+# CMSE 830 FINAL PROJECT - ENHANCED WITH ACCOLADES
+# NBA MULTI-DATASET ANALYTICS + HOF INDEX DASHBOARD
+# ==================================================
 import streamlit as st
 import pandas as pd
 import numpy as np
-import warnings
+import os
+import kagglehub
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-warnings.filterwarnings("ignore")
-
-# Try importing plotly - fallback if not available
-try:
-    import plotly.express as px
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-    PLOTLY_AVAILABLE = True
-except ImportError:
-    PLOTLY_AVAILABLE = False
-    st.warning("⚠️ Plotly not installed. Run: pip install plotly")
-
-# ========================================
+# --------------------------------------------------
 # PAGE CONFIG
-# ========================================
+# --------------------------------------------------
 st.set_page_config(
-    page_title="🏀 NBA Analytics & HoF Index",
+    page_title="NBA Analytics & Hall of Fame Index",
     page_icon="🏀",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    layout="wide"
 )
 
-st.title("🏀 NBA Analytics & Hall of Fame Index Dashboard")
+st.title("🏀 NBA Analytics & Hall of Fame Index Dashboard (with Accolades)")
 
 st.markdown(
     """
-**Comprehensive NBA player analysis combining stats with awards accolades:**
-- Season & career-level exploration with interactive visualizations
-- Player comparison and trend analysis
-- Enhanced **Hall of Fame Index (0–100)** incorporating:
-  - **Production**: Points, rebounds, assists, steals, blocks
-  - **Longevity**: Seasons, games played, team success
-  - **Awards**: MVP, Finals MVP, All-NBA, All-Star, Championships, DPOY
+This app combines **multiple NBA datasets** including **awards and accolades** to build:
 
-_Data source: NBA Historical Player Statistics & Accolades_
+- Season & team-level exploration  
+- Player comparison and trends  
+- A **Hall of Fame Index (0–100)** that scores every player based on:
+  - Longevity, production, and team success
+  - **Awards: MVP, All-Star, All-NBA, Championships, Finals MVP**
+
+_Data sources: Kaggle datasets for player stats, team records, and awards._
 """
 )
 
-# ========================================
-# UTILITY FUNCTIONS
-# ========================================
-def safe_numeric_convert(series, fill_value=0):
-    """Safely convert series to numeric, filling NaN with fill_value."""
-    return pd.to_numeric(series, errors="coerce").fillna(fill_value)
+# --------------------------------------------------
+# HELPER: generic Kaggle loader
+# --------------------------------------------------
+def load_kaggle_csv(dataset_id: str, prefer_contains=None) -> pd.DataFrame:
+    """Download a Kaggle dataset and return the first (or preferred) CSV."""
+    path = kagglehub.dataset_download(dataset_id)
+    files = [f for f in os.listdir(path) if f.lower().endswith(".csv")]
+    if not files:
+        raise FileNotFoundError(f"No CSV files found in Kaggle dataset {dataset_id}")
+    
+    csv_name = files[0]
+    if prefer_contains:
+        for f in files:
+            if prefer_contains.lower() in f.lower():
+                csv_name = f
+                break
+    
+    csv_path = os.path.join(path, csv_name)
+    return pd.read_csv(csv_path)
 
 
-def parse_season_year(season_str):
-    """Convert season string (e.g., '2020-21') to start year."""
+@st.cache_data(show_spinner=True)
+def load_all_raw():
+    """Load player stats, boxscores, team records, and COMPREHENSIVE awards data."""
+    players_raw = load_kaggle_csv("drgilermo/nba-players-stats")
+    boxscores_raw = load_kaggle_csv("szymonjwiak/nba-traditional")
+    seasons_raw = load_kaggle_csv("boonpalipatana/nba-season-records-from-every-year")
+    
+    # Load COMPREHENSIVE accolades dataset (has everything!)
+    accolades_raw = pd.DataFrame()
     try:
-        s = str(season_str).strip()
-        if "-" in s:
-            return int(s.split("-")[0])
-        return int(s)
-    except Exception:
-        return np.nan
+        accolades_raw = load_kaggle_csv("ryanschubertds/all-nba-aba-players-bio-stats-accolades")
+        st.success(f"✅ Loaded comprehensive accolades dataset: {len(accolades_raw)} rows, columns: {list(accolades_raw.columns)[:10]}")
+    except Exception as e:
+        st.warning(f"⚠️ Comprehensive accolades dataset not found: {e}")
+    
+    # Load MVP voting dataset as backup
+    mvp_raw = pd.DataFrame()
+    try:
+        mvp_raw = load_kaggle_csv("robertsunderhaft/nba-player-season-statistics-with-mvp-win-share")
+        st.info(f"Loaded MVP dataset: {len(mvp_raw)} rows")
+    except Exception as e:
+        st.warning(f"MVP dataset not available: {e}")
+    
+    # Load All-Star data
+    allstar_raw = pd.DataFrame()
+    try:
+        allstar_raw = load_kaggle_csv("ahmedbendaly/nba-all-star-game-data", prefer_contains="players")
+        st.info(f"Loaded All-Star dataset: {len(allstar_raw)} rows")
+    except Exception as e:
+        st.warning(f"All-Star dataset not available: {e}")
+
+    return players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw
 
 
-# ========================================
-# DATA GENERATION
-# ========================================
-@st.cache_data(show_spinner=False)
-def generate_synthetic_nba_data():
+# --------------------------------------------------
+# DATA WRANGLING
+# --------------------------------------------------
+@st.cache_data(show_spinner=True)
+def build_clean_tables():
+    players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw = load_all_raw()
+
+    # Normalize column names
+    players = players_raw.copy()
+    players.columns = players.columns.str.strip().str.lower()
+
+    box = boxscores_raw.copy()
+    box.columns = box.columns.str.strip().str.lower()
+
+    seasons = seasons_raw.copy()
+    seasons.columns = seasons.columns.str.strip().str.lower()
+
+    # Career-level table
+    career = players.copy()
+
+    if "player" in career.columns and "player_name" not in career.columns:
+        career = career.rename(columns={"player": "player_name"})
+    if "from" in career.columns:
+        career = career.rename(columns={"from": "from_year"})
+    if "to" in career.columns:
+        career = career.rename(columns={"to": "to_year"})
+    if "yrs" in career.columns:
+        career = career.rename(columns={"yrs": "seasons"})
+    if "g" in career.columns and "games" not in career.columns:
+        career = career.rename(columns={"g": "games"})
+
+    numeric_cols = ["from_year", "to_year", "seasons", "games", "tot_pts", "tot_trb", 
+                    "tot_ast", "tot_stl", "tot_blk", "ws", "bpm", "vorp"]
+    for col in numeric_cols:
+        if col in career.columns:
+            career[col] = pd.to_numeric(career[col], errors="coerce")
+
+    # Season-level from boxscores
+    rename_box = {}
+    if "season" in box.columns:
+        rename_box["season"] = "season"
+    elif "season_id" in box.columns:
+        rename_box["season_id"] = "season"
+    
+    if "player_name" in box.columns:
+        rename_box["player_name"] = "player_name"
+    elif "player" in box.columns:
+        rename_box["player"] = "player_name"
+
+    if "team_abbreviation" in box.columns:
+        rename_box["team_abbreviation"] = "team"
+    elif "team" in box.columns:
+        rename_box["team"] = "team"
+
+    for stat in ["pts", "reb", "ast", "stl", "blk", "tov", "min"]:
+        if stat in box.columns:
+            rename_box[stat] = stat
+    
+    if "game_id" in box.columns:
+        rename_box["game_id"] = "game_id"
+
+    box = box.rename(columns=rename_box)
+    keep_cols = [c for c in ["season", "player_name", "team", "game_id", "pts", "reb", "ast", "stl", "blk"] if c in box.columns]
+    box = box[keep_cols]
+    
+    if "season" in box.columns and "player_name" in box.columns:
+        box = box.dropna(subset=["season", "player_name"])
+
+    # Convert season to year
+    if "season" in box.columns:
+        def season_to_year(x):
+            try:
+                s = str(x)
+                if "-" in s:
+                    return int(s.split("-")[0])
+                return int(s)
+            except:
+                return np.nan
+        
+        box["season_start"] = box["season"].apply(season_to_year)
+        box = box.dropna(subset=["season_start"])
+        box["season_start"] = box["season_start"].astype(int)
+        box = box[box["season_start"] >= 2005]
+
+    # Aggregate to player-season
+    agg_dict = {}
+    for c in ["pts", "reb", "ast", "stl", "blk"]:
+        if c in box.columns:
+            agg_dict[c] = "sum"
+    if "game_id" in box.columns:
+        agg_dict["game_id"] = pd.Series.nunique
+
+    if agg_dict and "season_start" in box.columns:
+        season_player = (
+            box.groupby(["season_start", "player_name", "team"], as_index=False)
+            .agg(agg_dict)
+            .rename(columns={"season_start": "year", "game_id": "games"})
+        )
+    else:
+        season_player = pd.DataFrame(columns=["year", "player_name", "team"])
+
+    # Team records
+    if "season" in seasons.columns:
+        seasons = seasons.rename(columns={"season": "year"})
+    if "team_name" in seasons.columns:
+        seasons = seasons.rename(columns={"team_name": "team"})
+    if "win%" in seasons.columns:
+        seasons = seasons.rename(columns={"win%": "win_pct"})
+
+    for c in ["year", "wins", "losses", "win_pct"]:
+        if c in seasons.columns:
+            seasons[c] = pd.to_numeric(seasons[c], errors="coerce")
+
+    if "year" in seasons.columns:
+        seasons = seasons[seasons["year"] >= 2005]
+
+    team_cols = [c for c in ["year", "team", "win_pct"] if c in seasons.columns]
+    team_seasons = seasons[team_cols].drop_duplicates()
+
+    # Merge team win%
+    season_merged = season_player.merge(team_seasons, on=["year", "team"], how="left")
+
+    # Build career from season data
+    career_agg_dict = {}
+    if "year" in season_merged.columns:
+        career_agg_dict["from_year"] = ("year", "min")
+        career_agg_dict["to_year"] = ("year", "max")
+        career_agg_dict["seasons"] = ("year", "nunique")
+    
+    if "games" in season_merged.columns:
+        career_agg_dict["games"] = ("games", "sum")
+    
+    for stat in ["pts", "reb", "ast", "stl", "blk"]:
+        if stat in season_merged.columns:
+            career_agg_dict[f"tot_{stat}"] = (stat, "sum")
+    
+    if "win_pct" in season_merged.columns:
+        career_agg_dict["avg_team_win_pct"] = ("win_pct", "mean")
+
+    if career_agg_dict and "player_name" in season_merged.columns:
+        career_from_box = season_merged.groupby("player_name").agg(**career_agg_dict).reset_index()
+    else:
+        career_from_box = pd.DataFrame(columns=["player_name"])
+
+    # Merge with original career data
+    if "player_name" in career.columns and not career_from_box.empty:
+        career_extra = career.drop_duplicates(subset=["player_name"])
+        career_all = career_from_box.merge(career_extra, on="player_name", how="left", suffixes=("", "_orig"))
+    else:
+        career_all = career_from_box.copy()
+
+    # ==================================================
+    # PROCESS COMPREHENSIVE ACCOLADES DATA
+    # ==================================================
+    awards_career = pd.DataFrame()
+    
+    if not accolades_raw.empty:
+        accolades = accolades_raw.copy()
+        accolades.columns = accolades.columns.str.strip().str.lower()
+        
+        # Standardize player name column
+        name_cols = ["player", "player_name", "name"]
+        for col in name_cols:
+            if col in accolades.columns:
+                accolades = accolades.rename(columns={col: "player_name"})
+                break
+        
+        if "player_name" in accolades.columns:
+            # Map expected accolade column names
+            accolade_mappings = {
+                # Championships
+                "championships": ["championships", "rings", "titles", "champion"],
+                # MVPs
+                "mvp": ["mvp", "mvps", "league_mvp", "season_mvp", "nba mvp"],
+                "finals_mvp": ["finals_mvp", "fmvp", "finals_mvps", "finals mvp"],
+                # All-NBA
+                "all_nba_first": ["all_nba_first", "all-nba_first", "all_nba_1st", "all-nba 1st team"],
+                "all_nba_second": ["all_nba_second", "all-nba_second", "all_nba_2nd", "all-nba 2nd team"],
+                "all_nba_third": ["all_nba_third", "all-nba_third", "all_nba_3rd", "all-nba 3rd team"],
+                # All-Star - FIXED: the actual column name is "All-Star Count"
+                "all_star": ["all_star_count", "all-star count", "all_star", "allstar", "all_stars", "all-star"],
+                # Defense
+                "dpoy": ["dpoy", "defensive_player_of_the_year", "dpoy_awards", "defensive player of the year"],
+                "all_defensive_first": ["all_defensive_first", "all-defensive_first", "all_def_1st", "all-defense 1st team"],
+                "all_defensive_second": ["all_defensive_second", "all-defensive_second", "all_def_2nd", "all-defense 2nd team"],
+                # Other
+                "roy": ["roy", "rookie_of_the_year", "rookie of the year"],
+                "scoring_titles": ["scoring_champion", "scoring_titles", "scoring_leader", "scoring champion"]
+            }
+            
+            # Find and standardize columns
+            standardized_cols = {}
+            for standard_name, possible_names in accolade_mappings.items():
+                for possible in possible_names:
+                    if possible in accolades.columns:
+                        standardized_cols[possible] = standard_name
+                        break
+            
+            accolades = accolades.rename(columns=standardized_cols)
+            
+            # Aggregate accolades per player
+            agg_dict = {}
+            for accolade in accolade_mappings.keys():
+                if accolade in accolades.columns:
+                    # Convert to numeric first
+                    accolades[accolade] = pd.to_numeric(accolades[accolade], errors="coerce").fillna(0)
+                    agg_dict[accolade] = "sum"
+            
+            if agg_dict:
+                awards_career = accolades.groupby("player_name", as_index=False).agg(agg_dict)
+                
+                # Combine All-NBA into total count
+                allnba_cols = ["all_nba_first", "all_nba_second", "all_nba_third"]
+                existing_allnba = [c for c in allnba_cols if c in awards_career.columns]
+                if existing_allnba:
+                    awards_career["all_nba_total"] = awards_career[existing_allnba].sum(axis=1)
+                
+                # Combine All-Defense into total count
+                alldef_cols = ["all_defensive_first", "all_defensive_second"]
+                existing_alldef = [c for c in alldef_cols if c in awards_career.columns]
+                if existing_alldef:
+                    awards_career["all_defensive_total"] = awards_career[existing_alldef].sum(axis=1)
+    
+    # Fallback to MVP dataset if comprehensive one failed
+    elif not mvp_raw.empty:
+        mvp = mvp_raw.copy()
+        mvp.columns = mvp.columns.str.strip().str.lower()
+        
+        if "player" in mvp.columns:
+            mvp = mvp.rename(columns={"player": "player_name"})
+        
+        if "player_name" in mvp.columns:
+            mvp_col = None
+            for col in ["mvp", "is_mvp", "mvp_winner", "award_share"]:
+                if col in mvp.columns:
+                    mvp_col = col
+                    break
+            
+            if mvp_col:
+                if mvp_col == "award_share":
+                    mvp_winners = mvp[pd.to_numeric(mvp[mvp_col], errors="coerce") == 1.0]
+                else:
+                    mvp_winners = mvp[mvp[mvp_col] == True]
+                
+                if not mvp_winners.empty:
+                    awards_career = mvp_winners.groupby("player_name").size().reset_index(name="mvp")
+    
+    # Process All-Star data
+    if not allstar_raw.empty:
+        allstar = allstar_raw.copy()
+        allstar.columns = allstar.columns.str.strip().str.lower()
+        
+        if "player_name" in allstar.columns:
+            allstar_counts = allstar.groupby("player_name").size().reset_index(name="all_star")
+            
+            if awards_career.empty:
+                awards_career = allstar_counts
+            else:
+                awards_career = awards_career.merge(allstar_counts, on="player_name", how="outer")
+    
+    # Merge awards into career data
+    if not awards_career.empty and "player_name" in career_all.columns:
+        career_all = career_all.merge(awards_career, on="player_name", how="left")
+        
+        # Fill NaN with 0 for all award columns
+        award_cols = [c for c in awards_career.columns if c != "player_name"]
+        for col in award_cols:
+            if col in career_all.columns:
+                career_all[col] = career_all[col].fillna(0)
+
+    return season_merged, team_seasons, career_all
+
+
+season_df, team_df, career_df = build_clean_tables()
+
+# --------------------------------------------------
+# ENHANCED HOF INDEX (0–100) WITH ALL ACCOLADES
+# --------------------------------------------------
+def add_hof_index_with_accolades(career: pd.DataFrame) -> pd.DataFrame:
     """
-    Generate realistic synthetic NBA data for demonstration.
-    In production, replace with: load_kaggle_csv() calls
-    """
-    np.random.seed(42)
-
-    # Famous NBA players for realistic simulation
-    famous_players = [
-        "Michael Jordan", "LeBron James", "Kareem Abdul-Jabbar", "Wilt Chamberlain",
-        "Bill Russell", "Magic Johnson", "Larry Bird", "Kobe Bryant", "Stephen Curry",
-        "Tim Duncan", "Shaquille O'Neal", "Giannis Antetokounmpo", "Kevin Durant",
-        "Scottie Pippen", "Dennis Rodman", "Charles Barkley", "Karl Malone",
-        "John Stockton", "Hakeem Olajuwon", "Moses Malone", "Dirk Nowitzki",
-        "Allen Iverson", "Vince Carter", "Jason Kidd", "Ray Allen", "Steve Nash",
-        "Tony Parker", "Dwight Howard", "Damian Lillard", "Chris Paul",
-        "James Harden", "Kyrie Irving", "Kawhi Leonard", "Paul George",
-        "Anthony Davis", "Jayson Tatum", "Luka Doncic", "Nikola Jokic",
-        "Joel Embiid", "Shai Gilgeous-Alexander", "Donovan Mitchell", "Devin Booker"
-    ]
-
-    # Create season-level data (2005-2024)
-    seasons_data = []
-    for player in famous_players:
-        career_start = np.random.randint(1990, 2010)
-        career_end = np.random.randint(career_start + 8, 2024)
-
-        for year in range(career_start, career_end + 1):
-            if year >= 2005:  # Filter to 2005 onwards
-                # Age-based performance curve
-                age = year - career_start
-                peak = career_start + 8
-                decline_factor = max(0.5, 1 - max(0, (year - peak) * 0.02))
-
-                base_games = np.random.randint(40, 82)
-                games = max(1, int(base_games * decline_factor))
-
-                base_ppg = np.random.uniform(8, 28)
-                ppg = base_ppg * decline_factor
-                pts = int(ppg * games)
-
-                reb = int(np.random.uniform(2, 12) * games * decline_factor)
-                ast = int(np.random.uniform(1, 8) * games * decline_factor)
-                stl = int(np.random.uniform(0.5, 2) * games * decline_factor)
-                blk = int(np.random.uniform(0.2, 3) * games * decline_factor)
-
-                teams = ["BOS", "LAL", "GSW", "CHI", "MIA", "LAC", "DEN", "NYK", "PHI"]
-                team = np.random.choice(teams)
-
-                seasons_data.append({
-                    "year": year,
-                    "player_name": player,
-                    "team": team,
-                    "games": games,
-                    "pts": pts,
-                    "reb": reb,
-                    "ast": ast,
-                    "stl": stl,
-                    "blk": blk,
-                })
-
-    season_df = pd.DataFrame(seasons_data)
-
-    # Team win% data
-    team_seasons = []
-    for year in range(2005, 2025):
-        for team in season_df["team"].unique():
-            win_pct = np.random.uniform(0.25, 0.75)
-            team_seasons.append({"year": year, "team": team, "win_pct": win_pct})
-
-    team_df = pd.DataFrame(team_seasons)
-
-    # Career aggregation
-    career_data = []
-    for player in famous_players:
-        player_seasons = season_df[season_df["player_name"] == player]
-        if len(player_seasons) > 0:
-            from_year = int(player_seasons["year"].min())
-            to_year = int(player_seasons["year"].max())
-            seasons = to_year - from_year + 1
-
-            # Awards (simulated, somewhat realistic)
-            mvp_prob = 0.15 if from_year < 2015 else 0.08
-            finals_mvp_prob = 0.10 if from_year < 2015 else 0.05
-
-            career_data.append({
-                "player_name": player,
-                "from_year": from_year,
-                "to_year": to_year,
-                "seasons": seasons,
-                "games": int(player_seasons["games"].sum()),
-                "tot_pts": int(player_seasons["pts"].sum()),
-                "tot_reb": int(player_seasons["reb"].sum()),
-                "tot_ast": int(player_seasons["ast"].sum()),
-                "tot_stl": int(player_seasons["stl"].sum()),
-                "tot_blk": int(player_seasons["blk"].sum()),
-                "avg_team_win_pct": player_seasons.merge(team_df, on=["year", "team"])["win_pct"].mean()
-                if len(player_seasons.merge(team_df, on=["year", "team"])) > 0
-                else 0.5,
-                "mvp": int(np.random.rand() < mvp_prob) + int(np.random.rand() < mvp_prob * 0.5),
-                "finals_mvp": int(np.random.rand() < finals_mvp_prob),
-                "championships": int(np.random.poisson(np.random.uniform(0.3, 1.2))),
-                "all_star": int(np.random.poisson(np.random.uniform(3, 12))),
-                "all_nba_total": int(np.random.poisson(np.random.uniform(2, 8))),
-                "dpoy": int(np.random.rand() < 0.03),
-                "all_defensive_total": int(np.random.poisson(np.random.uniform(1, 5))),
-            })
-
-    career_df = pd.DataFrame(career_data)
-
-    return season_df, team_df, career_df
-
-
-# Load data
-season_df, team_df, career_df = generate_synthetic_nba_data()
-
-# ========================================
-# HOF INDEX CALCULATION
-# ========================================
-@st.cache_data(show_spinner=False)
-def calculate_hof_index(career: pd.DataFrame) -> pd.DataFrame:
-    """
-    Enhanced Hall of Fame Index (0-100) with weighted accolades.
+    Enhanced HoF Index with COMPREHENSIVE accolades.
+    Weights based on research from medium.com/@dwang22:
+    - Finals MVP > Championships > DPOY > All-NBA 1st > All-Star > All-Defense 1st > All-Rookie 1st
     """
     df = career.copy()
 
-    # Ensure numeric types
-    numeric_cols = ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", "tot_stl", 
-                    "tot_blk", "avg_team_win_pct", "mvp", "finals_mvp", "championships",
-                    "all_star", "all_nba_total", "dpoy", "all_defensive_total"]
-
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = safe_numeric_convert(df[col])
-
-    # Features with weights
-    base_features = {
-        "seasons": 1.0,
-        "games": 1.0,
-        "tot_pts": 0.5,
-        "tot_reb": 0.3,
-        "tot_ast": 0.3,
-        "tot_stl": 0.2,
-        "tot_blk": 0.2,
-        "avg_team_win_pct": 2.0,
-    }
-
+    # Base features (production + longevity)
+    base_features = [c for c in ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", "avg_team_win_pct"] 
+                     if c in df.columns]
+    
+    # Accolade features with research-backed weights
     accolade_weights = {
-        "mvp": 15.0,
-        "finals_mvp": 12.0,
-        "championships": 8.0,
-        "dpoy": 5.0,
-        "all_nba_total": 4.0,
-        "all_star": 2.0,
-        "all_defensive_total": 1.5,
+        "mvp": 15.0,                      # NBA MVP - Most important!
+        "finals_mvp": 12.0,               # Finals MVP - 2nd most important
+        "championships": 8.0,              # Championships/Rings
+        "dpoy": 5.0,                      # Defensive Player of the Year
+        "all_nba_first": 4.0,             # All-NBA First Team
+        "all_nba_total": 2.5,             # All-NBA (any team)
+        "all_star": 2.0,                  # All-Star selections
+        "all_defensive_first": 2.0,       # All-Defense First Team
+        "all_defensive_total": 1.0,       # All-Defense (any team)
+        "roy": 1.5,                       # Rookie of the Year
+        "scoring_titles": 1.5             # Scoring Champion
     }
-
-    all_features = {**base_features, **accolade_weights}
-    available_features = [f for f in all_features.keys() if f in df.columns]
-
-    if not available_features:
+    
+    accolade_features = [c for c in accolade_weights.keys() if c in df.columns]
+    all_features = base_features + accolade_features
+    
+    if not all_features:
         df["hof_index"] = 0.0
         return df
 
-    # Normalize and weight
-    X = df[available_features].fillna(0).astype(float)
+    X = df[all_features].fillna(0).astype(float)
+    
+    # Apply weights to accolades
     X_weighted = X.copy()
-
-    for feature, weight in all_features.items():
-        if feature in X_weighted.columns:
-            X_weighted[feature] = X_weighted[feature] * weight
-
+    for accolade, weight in accolade_weights.items():
+        if accolade in X_weighted.columns:
+            X_weighted[accolade] = X_weighted[accolade] * weight
+    
     # Z-score normalization
     mean = X_weighted.mean()
-    std = X_weighted.std() + 1e-10
-    Z = (X_weighted - mean) / std
-    Z = Z.fillna(0.0)
+    std = X_weighted.std(ddof=0) + 1e-10
+    z = (X_weighted - mean) / std
+    z = z.fillna(0.0)
 
-    raw_score = Z.sum(axis=1)
-    percentile_rank = raw_score.rank(method="average", pct=True)
-    df["hof_index"] = (percentile_rank * 100).round(1)
+    raw_score = z.sum(axis=1)
+    
+    # Convert to 0-100 percentile
+    ranks = raw_score.rank(method="average", pct=True)
+    df["hof_index"] = (ranks * 100).round(1)
 
     return df
 
 
-career_df = calculate_hof_index(career_df)
+career_df = add_hof_index_with_accolades(career_df)
 
-# ========================================
-# SIDEBAR FILTERS
-# ========================================
-st.sidebar.markdown("### 🎯 Global Filters")
+# Check what accolade columns we actually have
+all_possible_accolades = ["mvp", "finals_mvp", "championships", "dpoy", "all_nba_first", 
+                          "all_nba_second", "all_nba_third", "all_nba_total", "all_star",
+                          "all_defensive_first", "all_defensive_second", "all_defensive_total",
+                          "roy", "scoring_titles"]
+accolade_cols_available = [c for c in all_possible_accolades if c in career_df.columns]
 
-min_seasons_filter = st.sidebar.slider(
-    "Minimum Seasons", 
-    min_value=0, 
-    max_value=int(career_df["seasons"].max()),
-    value=5
-)
-
-min_games_filter = st.sidebar.slider(
-    "Minimum Games Played",
-    min_value=0,
-    max_value=int(career_df["games"].max()),
-    value=100,
-    step=50
-)
-
-career_filtered = career_df[
-    (career_df["seasons"] >= min_seasons_filter) & 
-    (career_df["games"] >= min_games_filter)
-].copy()
-
-st.sidebar.metric(
-    "Filtered Players",
-    f"{len(career_filtered):,} / {len(career_df):,}"
-)
-
-# ========================================
+# --------------------------------------------------
 # TABS
-# ========================================
+# --------------------------------------------------
 tabs = st.tabs([
-    "📊 Overview",
-    "📈 EDA (Correlations & Distributions)",
-    "🏀 Player Explorer",
-    "⚔️ Player Comparison",
-    "👥 Team Trends",
-    "🏆 Hall of Fame Index"
+    "Overview",
+    "EDA (Season & Team)",
+    "Player Explorer",
+    "Player Comparison",
+    "Team Trends",
+    "Hall of Fame Explorer"
 ])
 
-# ========== TAB 1: OVERVIEW ==========
+# TAB 1: OVERVIEW
 with tabs[0]:
-    st.subheader("Dataset Summary & Quality Check")
-
-    # Key metrics
-    col1, col2, col3, col4, col5 = st.columns(5)
-
-    with col1:
-        st.metric("📊 Total Players", f"{len(career_df):,}")
-
-    with col2:
-        st.metric("🎯 Filtered Players", f"{len(career_filtered):,}")
-
-    with col3:
-        unique_seasons = season_df["player_name"].nunique()
-        st.metric("🕐 Season Records", f"{len(season_df):,}")
-
-    with col4:
-        year_min, year_max = int(season_df["year"].min()), int(season_df["year"].max())
-        st.metric("📅 Year Range", f"{year_min}–{year_max}")
-
-    with col5:
-        st.metric("🏢 Teams", f"{season_df['team'].nunique()}")
-
-    st.markdown("---")
-
-    # Data completeness
-    st.markdown("### ✅ Data Quality Check")
-
-    col_a, col_b = st.columns(2)
-
+    st.subheader("Dataset overview")
+    
+    # Summary metrics
+    st.markdown("### 📊 Dataset Summary")
+    col_a, col_b, col_c, col_d = st.columns(4)
+    
     with col_a:
-        st.markdown("**Career-Level Statistics**")
-        completeness = career_df.notna().sum() / len(career_df) * 100
-        for col in ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", "hof_index"]:
-            if col in career_df.columns:
-                pct = completeness[col]
-                status = "✅" if pct > 95 else "⚠️" if pct > 80 else "❌"
-                st.write(f"{status} {col.replace('tot_', 'Total ')}: {pct:.1f}%")
-
+        st.metric("Total Players", f"{len(career_df):,}")
+    
     with col_b:
-        st.markdown("**Accolades Available**")
-        accolade_cols = ["mvp", "finals_mvp", "championships", "all_star", 
-                         "all_nba_total", "dpoy", "all_defensive_total"]
-        for col in accolade_cols:
-            if col in career_df.columns:
-                count = (career_df[col] > 0).sum()
-                st.write(f"🏆 {col.replace('_', ' ').title()}: {count} players")
-
-    st.markdown("---")
-
-    # Sample data
-    st.markdown("### 📋 Sample Career Data")
-    display_cols = ["player_name", "seasons", "games", "tot_pts", "tot_reb", 
-                    "tot_ast", "mvp", "all_star", "hof_index"]
-    display_cols = [c for c in display_cols if c in career_df.columns]
-    st.dataframe(
-        career_df[display_cols].head(10),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.markdown("---")
-    st.caption(
-        "**Created by Aditya Sudarsan Anand** – CMSE 830 Final Project | "
-        "NBA Analytics & Hall of Fame Index Dashboard"
-    )
-
-# ========== TAB 2: EDA ==========
-with tabs[1]:
-    st.subheader("Exploratory Data Analysis")
-
-    eda_section = st.radio(
-        "Select Analysis",
-        ["Correlation Matrix", "Stat Distributions", "Career Trends", "Awards Overview"],
-        horizontal=True
-    )
-
-    if eda_section == "Correlation Matrix":
-        st.markdown("### 📊 Correlation Analysis")
-
-        numeric_cols = season_df.select_dtypes(include=np.number).columns.tolist()
-        numeric_cols = [c for c in numeric_cols if c not in ["year"]]
-
-        corr_method = st.selectbox("Method", ["Pearson", "Spearman"], index=0)
-        method_map = {"Pearson": "pearson", "Spearman": "spearman"}
-
-        if numeric_cols and PLOTLY_AVAILABLE:
-            corr_matrix = season_df[numeric_cols].corr(method=method_map[corr_method])
-
-            fig = px.imshow(
-                corr_matrix,
-                labels=dict(x="", y="", color="Correlation"),
-                color_continuous_scale="RdBu",
-                zmin=-1,
-                zmax=1,
-                aspect="auto",
-                height=500,
-                title=f"{corr_method} Correlation Matrix - Season Stats"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("📊 Create correlation table manually:")
-            if numeric_cols:
-                corr_matrix = season_df[numeric_cols].corr(method=method_map[corr_method])
-                st.dataframe(corr_matrix, use_container_width=True)
-
-    elif eda_section == "Stat Distributions":
-        st.markdown("### 📈 Statistical Distributions")
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            stat_choice = st.selectbox(
-                "Select Stat (Season Level)",
-                ["pts", "reb", "ast", "stl", "blk", "games"]
-            )
-
-        with col2:
-            bin_count = st.slider("Bins", 10, 50, 30)
-
-        stat_data = season_df[stat_choice].dropna()
-
-        if PLOTLY_AVAILABLE:
-            fig = go.Figure()
-            fig.add_trace(go.Histogram(
-                x=stat_data,
-                nbinsx=bin_count,
-                name=stat_choice.upper(),
-                marker_color="rgba(0, 100, 200, 0.7)"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=[stat_data.mean()] * 2,
-                y=[0, season_df[stat_choice].notna().sum()],
-                mode="lines",
-                name="Mean",
-                line=dict(color="red", dash="dash", width=2)
-            ))
-
-            fig.update_layout(
-                title=f"Distribution of {stat_choice.upper()} (Season Level)",
-                xaxis_title=stat_choice.upper(),
-                yaxis_title="Frequency",
-                height=400,
-                showlegend=True
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.bar_chart(pd.DataFrame({stat_choice: stat_data}).value_counts())
-
-        # Stats summary
-        col_a, col_b, col_c, col_d = st.columns(4)
-        with col_a:
-            st.metric("Mean", f"{stat_data.mean():.1f}")
-        with col_b:
-            st.metric("Median", f"{stat_data.median():.1f}")
-        with col_c:
-            st.metric("Std Dev", f"{stat_data.std():.1f}")
-        with col_d:
-            st.metric("Max", f"{stat_data.max():.1f}")
-
-    elif eda_section == "Career Trends":
-        st.markdown("### 📊 Career Trajectory (Top 15 Scorers)")
-
-        top_players = career_df.nlargest(15, "tot_pts")
-
-        if len(top_players) > 0:
-            selected_player = st.selectbox(
-                "Select Player",
-                top_players["player_name"].values
-            )
-
-            player_season = season_df[season_df["player_name"] == selected_player].sort_values("year")
-
-            if len(player_season) > 0:
-                st.markdown(f"**{selected_player} Season-by-Season Stats**")
-                st.dataframe(player_season, use_container_width=True, hide_index=True)
-
-                # Line chart
-                if PLOTLY_AVAILABLE:
-                    fig = go.Figure()
-
-                    fig.add_trace(go.Scatter(x=player_season["year"], y=player_season["pts"],
-                                           mode="lines+markers", name="Points"))
-                    fig.add_trace(go.Scatter(x=player_season["year"], y=player_season["reb"],
-                                           mode="lines+markers", name="Rebounds"))
-                    fig.add_trace(go.Scatter(x=player_season["year"], y=player_season["ast"],
-                                           mode="lines+markers", name="Assists"))
-
-                    fig.update_layout(title=f"{selected_player} - Career Stats", height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-
-    elif eda_section == "Awards Overview":
-        st.markdown("### 🏆 Awards Distribution")
-
-        award_cols = ["mvp", "finals_mvp", "championships", "all_star", 
-                      "all_nba_total", "dpoy", "all_defensive_total"]
-        award_cols = [c for c in award_cols if c in career_df.columns]
-
-        award_counts = {col.replace("_", " ").title(): (career_df[col] > 0).sum() 
-                       for col in award_cols}
-
-        if PLOTLY_AVAILABLE:
-            fig = px.bar(
-                x=list(award_counts.keys()),
-                y=list(award_counts.values()),
-                title="Number of Players with Each Award",
-                labels={"x": "Award", "y": "Player Count"},
-                color=list(award_counts.values()),
-                color_continuous_scale="Viridis"
-            )
-            fig.update_layout(height=400, showlegend=False)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.bar_chart(pd.DataFrame(award_counts, index=[0]).T)
-
-        # Detailed breakdown
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**MVP Distribution**")
-            mvp_dist = career_df[career_df["mvp"] > 0]["mvp"].value_counts().sort_index()
-            for mvp_count, player_count in mvp_dist.items():
-                st.write(f"{int(mvp_count)} MVP(s): {int(player_count)} players")
-
-        with col2:
-            st.markdown("**All-Star Distribution**")
-            allstar_dist = career_df[career_df["all_star"] > 0]["all_star"].value_counts().head(10).sort_index()
-            for allstar_count, player_count in allstar_dist.items():
-                st.write(f"{int(allstar_count)} All-Stars: {int(player_count)} players")
-
-# ========== TAB 3: PLAYER EXPLORER ==========
-with tabs[2]:
-    st.subheader("Season-Level Player Explorer")
-
-    all_players = sorted(season_df["player_name"].unique())
-
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        player_search = st.selectbox(
-            "Search & Select Player",
-            all_players,
-            help="Filter players by name"
-        )
-
-    player_data = season_df[season_df["player_name"] == player_search].sort_values("year")
-    career_row = career_df[career_df["player_name"] == player_search]
-
-    if len(player_data) > 0:
-        # Player summary card
-        st.markdown(f"### {player_search}")
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Career Seasons", int(career_row["seasons"].values[0]) 
-                     if len(career_row) > 0 else "N/A")
-
-        with col2:
-            st.metric("Total Games", int(career_row["games"].values[0]) 
-                     if len(career_row) > 0 else "N/A")
-
-        with col3:
-            st.metric("Career Points", int(career_row["tot_pts"].values[0]) 
-                     if len(career_row) > 0 else "N/A")
-
-        with col4:
-            hof_idx = career_row["hof_index"].values[0] if len(career_row) > 0 else "N/A"
-            st.metric("HoF Index", f"{hof_idx:.1f}" if hof_idx != "N/A" else "N/A")
-
-        st.markdown("---")
-
-        # Season-by-season stats
-        st.markdown("**Season-by-Season Statistics**")
-        display_cols = ["year", "team", "games", "pts", "reb", "ast", "stl", "blk"]
-        st.dataframe(
-            player_data[display_cols],
-            use_container_width=True,
-            hide_index=True
-        )
-
-# ========== TAB 4: PLAYER COMPARISON ==========
-with tabs[3]:
-    st.subheader("Head-to-Head Player Comparison")
-
-    col1, col2 = st.columns(2)
-
-    all_players_comp = sorted(career_filtered["player_name"].unique())
-
-    with col1:
-        player1_name = st.selectbox(
-            "Player 1",
-            all_players_comp,
-            key="player1"
-        )
-
-    with col2:
-        player2_name = st.selectbox(
-            "Player 2",
-            all_players_comp,
-            index=min(1, len(all_players_comp) - 1),
-            key="player2"
-        )
-
-    if player1_name and player2_name and player1_name != player2_name:
-        p1 = career_filtered[career_filtered["player_name"] == player1_name].iloc[0]
-        p2 = career_filtered[career_filtered["player_name"] == player2_name].iloc[0]
-
-        # Comparison table
-        st.markdown("### 📊 Career Statistics Comparison")
-
-        comp_stats = ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", 
-                      "tot_stl", "tot_blk", "mvp", "all_star", "championships", "hof_index"]
-        comp_stats = [c for c in comp_stats if c in career_filtered.columns]
-
-        comp_data = []
-        for stat in comp_stats:
-            v1 = p1[stat] if pd.notna(p1[stat]) else 0
-            v2 = p2[stat] if pd.notna(p2[stat]) else 0
-
-            # Determine winner
-            if stat == "hof_index":
-                winner = "🔴 " + player1_name if v1 > v2 else "🔵 " + player2_name
-                v1, v2 = f"{v1:.1f}", f"{v2:.1f}"
-            else:
-                winner = "🔴" if v1 > v2 else "🔵" if v2 > v1 else "⚪"
-                v1, v2 = int(v1), int(v2)
-
-            comp_data.append({
-                "Stat": stat.replace("tot_", "Total ").replace("_", " ").title(),
-                player1_name: v1,
-                player2_name: v2,
-                "Leader": winner
-            })
-
-        comp_df = pd.DataFrame(comp_data)
-        st.dataframe(comp_df, use_container_width=True, hide_index=True)
-
+        unique_seasons = season_df["player_name"].dropna().nunique() if "player_name" in season_df.columns else 0
+        st.metric("Players (Season Data)", f"{unique_seasons:,}")
+    
+    with col_c:
+        total_seasons = len(season_df) if not season_df.empty else 0
+        st.metric("Player-Seasons", f"{total_seasons:,}")
+    
+    with col_d:
+        year_range = ""
+        if "year" in season_df.columns and not season_df.empty:
+            min_year = int(season_df["year"].min())
+            max_year = int(season_df["year"].max())
+            year_range = f"{min_year}-{max_year}"
+        st.metric("Year Range", year_range if year_range else "N/A")
+    
+    # Accolades status
+    st.markdown("### 🏆 Accolades Data Status")
+    if accolade_cols_available:
+        st.success(f"✅ **{len(accolade_cols_available)} accolades included:**")
+        col_display = {
+            "mvp": "🏆 MVP",
+            "finals_mvp": "🏆 Finals MVP",
+            "championships": "💍 Championships/Rings",
+            "dpoy": "🛡️ DPOY",
+            "all_nba_first": "⭐ All-NBA 1st",
+            "all_nba_second": "⭐ All-NBA 2nd",
+            "all_nba_third": "⭐ All-NBA 3rd",
+            "all_nba_total": "⭐ All-NBA Total",
+            "all_star": "🌟 All-Star",
+            "all_defensive_first": "🛡️ All-Defense 1st",
+            "all_defensive_second": "🛡️ All-Defense 2nd",
+            "all_defensive_total": "🛡️ All-Defense Total",
+            "roy": "🆕 ROY",
+            "scoring_titles": "🎯 Scoring Titles"
+        }
+        displayed = [col_display.get(c, c) for c in accolade_cols_available]
+        st.write(", ".join(displayed))
     else:
-        st.info("Select two different players to compare.")
+        st.warning("⚠️ No accolades data found. HoF Index uses only stats.")
+    
+    st.markdown("---")
+    
+    c1, c2 = st.columns(2)
 
-# ========== TAB 5: TEAM TRENDS ==========
+    with c1:
+        st.markdown("**Season-level player stats:**")
+        st.write(season_df.head())
+        st.write(f"Rows: {len(season_df):,} | Columns: {season_df.shape[1]}")
+
+    with c2:
+        st.markdown("**Career-level table:**")
+        st.write(career_df.head())
+        st.write(f"Players: {len(career_df):,}")
+
+    st.markdown("---")
+    st.markdown("Created by **Aditya Sudarsan Anand** – CMSE 830 Final Project.")
+
+# TAB 2: EDA
+with tabs[1]:
+    st.subheader("Season & Team EDA")
+    numeric_cols = season_df.select_dtypes(include=np.number).columns.tolist()
+
+    colA, colB = st.columns(2)
+
+    with colA:
+        st.markdown("**Correlation heatmap**")
+        if len(numeric_cols) >= 2:
+            method = st.selectbox("Correlation method", ["pearson", "spearman"], index=0)
+            corr = season_df[numeric_cols].corr(method=method)
+            fig, ax = plt.subplots(figsize=(7, 5))
+            sns.heatmap(corr, cmap="coolwarm", center=0, ax=ax)
+            ax.set_title(f"Correlation ({method})")
+            st.pyplot(fig)
+
+    with colB:
+        st.markdown("**Distribution**")
+        if numeric_cols:
+            stat = st.selectbox("Select stat", numeric_cols, index=0)
+            fig, ax = plt.subplots(figsize=(7, 5))
+            sns.histplot(season_df[stat].dropna(), kde=True, bins=30, ax=ax)
+            ax.set_title(f"Distribution of {stat}")
+            st.pyplot(fig)
+
+    st.markdown("---")
+    st.markdown("### Team win% over seasons")
+
+    if "year" in team_df.columns and "win_pct" in team_df.columns and "team" in team_df.columns:
+        team_list = sorted(team_df["team"].dropna().unique())
+        if team_list:
+            sel_team = st.selectbox("Choose a team", team_list)
+            tdf = team_df[team_df["team"] == sel_team].sort_values("year")
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(tdf["year"], tdf["win_pct"], marker="o")
+            ax.set_xlabel("Year")
+            ax.set_ylabel("Win%")
+            ax.set_title(f"{sel_team} – win% over time")
+            st.pyplot(fig)
+
+# TAB 3: PLAYER EXPLORER
+with tabs[2]:
+    st.subheader("Player explorer (season-level)")
+
+    if "player_name" in season_df.columns:
+        all_players_season = sorted(season_df["player_name"].dropna().unique())
+        if all_players_season:
+            sel_player = st.selectbox("Select a player", all_players_season)
+            pdf = season_df[season_df["player_name"] == sel_player].sort_values("year")
+
+            st.markdown(f"### {sel_player} – season overview")
+            st.dataframe(pdf)
+
+            stat_choices = [c for c in ["pts", "reb", "ast"] if c in pdf.columns]
+            if stat_choices:
+                stat_to_plot = st.selectbox("Plot stat over time", stat_choices, index=0)
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.plot(pdf["year"], pdf[stat_to_plot], marker="o")
+                ax.set_xlabel("Year")
+                ax.set_ylabel(stat_to_plot)
+                ax.set_title(f"{sel_player} – {stat_to_plot} over seasons")
+                st.pyplot(fig)
+
+# TAB 4: PLAYER COMPARISON
+with tabs[3]:
+    st.subheader("Player Comparison")
+    
+    if "player_name" in career_df.columns:
+        all_players_comp = sorted(career_df["player_name"].dropna().unique())
+        
+        if len(all_players_comp) >= 2:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                player1 = st.selectbox("Select Player 1", all_players_comp, key="p1")
+            with col2:
+                player2 = st.selectbox("Select Player 2", all_players_comp, index=1, key="p2")
+            
+            p1_data = career_df[career_df["player_name"] == player1]
+            p2_data = career_df[career_df["player_name"] == player2]
+            
+            if not p1_data.empty and not p2_data.empty:
+                p1 = p1_data.iloc[0]
+                p2 = p2_data.iloc[0]
+                
+                st.markdown("### Career Statistics Comparison")
+                
+                comp_stats = ["seasons", "games", "tot_pts", "tot_reb", "tot_ast", "hof_index"]
+                comp_stats += [c for c in accolade_cols_available if c in p1.index and c in p2.index]
+                
+                comp_data = []
+                
+                for stat in comp_stats:
+                    if stat in p1.index and stat in p2.index:
+                        v1 = p1[stat] if not pd.isna(p1[stat]) else 0
+                        v2 = p2[stat] if not pd.isna(p2[stat]) else 0
+                        
+                        comp_data.append({
+                            "Statistic": stat.replace("tot_", "Total ").replace("_", " ").title(),
+                            player1: f"{v1:.1f}" if stat == "hof_index" else int(v1),
+                            player2: f"{v2:.1f}" if stat == "hof_index" else int(v2)
+                        })
+                
+                if comp_data:
+                    comp_df = pd.DataFrame(comp_data)
+                    st.dataframe(comp_df, use_container_width=True)
+
+# TAB 5: TEAM TRENDS
 with tabs[4]:
-    st.subheader("Team Performance Trends")
+    st.subheader("Team trends")
 
-    team_list = sorted(team_df["team"].unique())
+    if "team" in season_df.columns and "year" in season_df.columns:
+        team_list2 = sorted(season_df["team"].dropna().unique())
+        if team_list2:
+            sel_team2 = st.selectbox("Select team", team_list2)
+            tdf2 = season_df[season_df["team"] == sel_team2]
 
-    col1, col2 = st.columns([2, 1])
+            agg_cols2 = {}
+            for c in ["pts", "reb", "ast"]:
+                if c in tdf2.columns:
+                    agg_cols2[c] = "sum"
+            if "games" in tdf2.columns:
+                agg_cols2["games"] = "sum"
 
-    with col1:
-        team_choice = st.selectbox("Select Team", team_list)
+            if agg_cols2:
+                team_season_stats = tdf2.groupby("year").agg(agg_cols2).reset_index()
+                st.markdown(f"### {sel_team2} – season totals")
+                st.dataframe(team_season_stats)
 
-    team_data = team_df[team_df["team"] == team_choice].sort_values("year")
+                if "pts" in team_season_stats.columns:
+                    fig, ax = plt.subplots(figsize=(10, 4))
+                    ax.plot(team_season_stats["year"], team_season_stats["pts"], marker="o")
+                    ax.set_xlabel("Year")
+                    ax.set_ylabel("Total points")
+                    ax.set_title(f"{sel_team2} – total points per season")
+                    st.pyplot(fig)
 
-    if len(team_data) > 0:
-        st.markdown(f"### {team_choice} - Win Percentage Over Time")
-        st.dataframe(team_data, use_container_width=True, hide_index=True)
-
-        # Team stats
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("Avg Win %", f"{team_data['win_pct'].mean():.1%}")
-
-        with col2:
-            st.metric("Best Season", f"{team_data['win_pct'].max():.1%}")
-
-        with col3:
-            st.metric("Worst Season", f"{team_data['win_pct'].min():.1%}")
-
-        with col4:
-            st.metric("Seasons", len(team_data))
-
-        st.markdown("---")
-
-        # Player roster (top by points that season)
-        st.markdown("**Top Scoring Players**")
-
-        team_players = season_df[season_df["team"] == team_choice].nlargest(10, "pts")
-        if len(team_players) > 0:
-            display_cols = ["year", "player_name", "pts", "reb", "ast", "games"]
-            st.dataframe(
-                team_players[display_cols],
-                use_container_width=True,
-                hide_index=True
-            )
-
-# ========== TAB 6: HALL OF FAME INDEX ==========
+# TAB 6: HALL OF FAME EXPLORER
 with tabs[5]:
-    st.subheader("Hall of Fame Index Explorer (0-100)")
+    st.subheader("Hall of Fame Index Explorer (0-100) - WITH ACCOLADES")
 
     st.markdown(
-        """
-**Enhanced Hall of Fame Index** with research-backed accolade weights:
+        f"""
+**Enhanced Hall of Fame Index** - Research-backed weights for all accolades:
 
 **Production & Longevity:**
-- Career seasons, games, total points/rebounds/assists/steals/blocks
-- Average team win percentage
+- Career seasons, games, points, rebounds, assists
+- Average team win%
 
-**Awards Weights (Most → Least Important):**
-- 🏆 MVP (15x) - Strongest HoF predictor
-- 🏆 Finals MVP (12x)
-- 💍 Championships (8x)
-- 🛡️ DPOY (5x)
-- ⭐ All-NBA Total (4x)
-- 🌟 All-Star (2x)
-- 🛡️ All-Defense Total (1.5x)
+**Accolades (weights based on HoF research):**
+{f"- 🏆 **MVP** (15x weight) - Most important HoF predictor" if "mvp" in accolade_cols_available else "- ❌ MVP (not available)"}
+{f"- 🏆 **Finals MVP** (12x weight) - 2nd most important" if "finals_mvp" in accolade_cols_available else "- ❌ Finals MVP (not available)"}
+{f"- 💍 **Championships/Rings** (8x weight)" if "championships" in accolade_cols_available else "- ❌ Championships (not available)"}
+{f"- 🛡️ **DPOY** (5x weight)" if "dpoy" in accolade_cols_available else "- ❌ DPOY (not available)"}
+{f"- ⭐ **All-NBA 1st Team** (4x weight)" if "all_nba_first" in accolade_cols_available else "- ❌ All-NBA 1st (not available)"}
+{f"- ⭐ **All-NBA Total** (2.5x weight)" if "all_nba_total" in accolade_cols_available else ""}
+{f"- 🌟 **All-Star** (2x weight)" if "all_star" in accolade_cols_available else "- ❌ All-Star (not available)"}
+{f"- 🛡️ **All-Defense** (2x/1x weight)" if any(c in accolade_cols_available for c in ["all_defensive_first", "all_defensive_total"]) else "- ❌ All-Defense (not available)"}
+{f"- 🆕 **ROY** (1.5x weight)" if "roy" in accolade_cols_available else ""}
+{f"- 🎯 **Scoring Titles** (1.5x weight)" if "scoring_titles" in accolade_cols_available else ""}
 
-_Lower index = more traditional role players | Higher index = elite/inner-circle candidates_
+_Research source: Logistic regression analysis of actual HoF inductees_
 """
     )
 
-    st.markdown("---")
-
-    # Filters in sidebar (already applied to career_filtered)
-    st.markdown("### 🎯 HoF Rankings")
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        sort_by = st.selectbox(
-            "Sort By",
-            ["HoF Index", "Total Points", "MVP Awards", "All-Stars", "Championships"]
-        )
-
-    with col2:
-        top_n = st.slider("Show Top N", 10, 100, 50, 10)
-
-    # Sort
-    if sort_by == "HoF Index":
-        career_sorted = career_filtered.sort_values("hof_index", ascending=False)
-    elif sort_by == "Total Points":
-        career_sorted = career_filtered.sort_values("tot_pts", ascending=False)
-    elif sort_by == "MVP Awards":
-        career_sorted = career_filtered.sort_values("mvp", ascending=False)
-    elif sort_by == "All-Stars":
-        career_sorted = career_filtered.sort_values("all_star", ascending=False)
-    else:  # Championships
-        career_sorted = career_filtered.sort_values("championships", ascending=False)
-
-    # Display table
-    display_cols = ["player_name", "seasons", "games", "tot_pts", "tot_reb", "tot_ast",
-                    "mvp", "all_star", "championships", "hof_index"]
-    display_cols = [c for c in display_cols if c in career_sorted.columns]
-
-    st.dataframe(
-        career_sorted[display_cols].head(top_n),
-        use_container_width=True,
-        hide_index=True
-    )
-
-    st.markdown("---")
-
-    # Player inspector
-    st.markdown("### 🔍 Individual Player Profile")
-
-    player_for_profile = st.selectbox(
-        "Select Player",
-        sorted(career_filtered["player_name"].unique()),
-        key="profile_player"
-    )
-
-    player_profile = career_filtered[career_filtered["player_name"] == player_for_profile]
-
-    if len(player_profile) > 0:
-        p = player_profile.iloc[0]
-
-        # Header
-        col1, col2, col3 = st.columns([2, 2, 1])
-
+    if career_df.empty:
+        st.warning("Career table is empty")
+    else:
+        st.write(f"**Total players: {len(career_df):,}**")
+        
+        # Filters
+        col1, col2 = st.columns(2)
+        
         with col1:
-            st.markdown(f"## {player_for_profile}")
-            st.markdown(f"**Career: {int(p['from_year'])}-{int(p['to_year'])}** | "
-                       f"**{int(p['seasons'])} Seasons**")
-
-        with col3:
-            hof_idx = p["hof_index"]
-            if hof_idx >= 95:
-                verdict = "🏆 Elite/Inner-Circle"
-                color = "green"
-            elif hof_idx >= 85:
-                verdict = "⭐ Strong Candidate"
-                color = "blue"
-            elif hof_idx >= 70:
-                verdict = "🎯 Borderline"
-                color = "orange"
-            elif hof_idx >= 50:
-                verdict = "✅ Solid Career"
-                color = "gray"
+            if "seasons" in career_df.columns:
+                max_s = int(career_df["seasons"].max()) if career_df["seasons"].notna().any() else 20
+                min_seasons = st.slider("Minimum seasons", 0, max_s, 0)
             else:
-                verdict = "📊 Role Player"
-                color = "lightgray"
-
-            st.markdown(f"**{verdict}**")
-
-        st.markdown("---")
-
-        # Stats and awards
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            st.markdown("**Career Stats**")
-            st.metric("Games", int(p["games"]))
-            st.metric("Points", int(p["tot_pts"]))
-            st.metric("Rebounds", int(p["tot_reb"]))
-            st.metric("Assists", int(p["tot_ast"]))
-
+                min_seasons = 0
+        
         with col2:
-            st.markdown("**Defensive Stats**")
-            st.metric("Steals", int(p["tot_stl"]))
-            st.metric("Blocks", int(p["tot_blk"]))
-            st.metric("Avg Team Win%", f"{p['avg_team_win_pct']:.1%}")
+            if "games" in career_df.columns:
+                max_g = int(career_df["games"].max()) if career_df["games"].notna().any() else 1500
+                min_games = st.slider("Minimum games", 0, max_g, 0, step=50)
+            else:
+                min_games = 0
+        
+        # Apply filters
+        career_filtered = career_df.copy()
+        if "seasons" in career_filtered.columns and min_seasons > 0:
+            career_filtered = career_filtered[career_filtered["seasons"].fillna(0) >= min_seasons]
+        if "games" in career_filtered.columns and min_games > 0:
+            career_filtered = career_filtered[career_filtered["games"].fillna(0) >= min_games]
+        
+        if "hof_index" in career_filtered.columns:
+            career_filtered = career_filtered.sort_values("hof_index", ascending=False)
+        
+        st.write(f"**Filtered: {len(career_filtered):,} players**")
+        
+        if len(career_filtered) > 0:
+            top_n = st.slider("Show top N", 10, min(200, len(career_filtered)), min(50, len(career_filtered)), 10)
 
-        with col3:
-            st.markdown("**Awards & Accolades**")
-            st.metric("MVP", int(p["mvp"]))
-            st.metric("Finals MVP", int(p["finals_mvp"]))
-            st.metric("All-Stars", int(p["all_star"]))
-            st.metric("Championships", int(p["championships"]))
-
+            st.markdown(f"### Top {top_n} players")
+            
+            display_cols = [c for c in ["player_name", "from_year", "to_year", "seasons", "games",
+                                        "tot_pts", "tot_reb", "tot_ast"] + accolade_cols_available + ["hof_index"]
+                           if c in career_filtered.columns]
+            
+            if display_cols:
+                st.dataframe(career_filtered[display_cols].head(top_n), use_container_width=True)
+        
+        # Player inspector
         st.markdown("---")
+        st.markdown("### Inspect player")
+        
+        if "player_name" in career_df.columns:
+            all_players = sorted(career_df["player_name"].dropna().unique())
+            
+            if all_players:
+                sel = st.selectbox(f"Select from {len(all_players):,} players", all_players)
+                
+                row = career_df[career_df["player_name"] == sel]
+                if not row.empty:
+                    r = row.iloc[0]
+                    
+                    st.markdown(f"## {sel}")
+                    
+                    c1, c2, c3 = st.columns(3)
+                    
+                    with c1:
+                        st.markdown("**Career Overview**")
+                        for col in ["from_year", "to_year", "seasons", "games"]:
+                            if col in r.index and pd.notna(r[col]):
+                                val = int(r[col]) if col != "games" else f"{int(r[col]):,}"
+                                st.write(f"{col.replace('_', ' ').title()}: {val}")
+                    
+                    with c2:
+                        st.markdown("**Career Totals**")
+                        for col in ["tot_pts", "tot_reb", "tot_ast"]:
+                            if col in r.index and pd.notna(r[col]):
+                                st.write(f"{col.replace('tot_', '').upper()}: {int(r[col]):,}")
+                    
+                    with c3:
+                        st.markdown("**Accolades** 🏆")
+                        
+                        # Debug: Show all available accolade columns for this player
+                        accolade_debug = []
+                        for col in accolade_cols_available:
+                            if col in r.index and pd.notna(r[col]) and r[col] > 0:
+                                label = col.replace("_", " ").title()
+                                st.write(f"{label}: {int(r[col])}")
+                                accolade_debug.append(f"{col}={r[col]}")
+                        
+                        # Show if no accolades found
+                        if not accolade_debug:
+                            st.warning("No accolade data found for this player")
+                            # Show what columns exist
+                            st.caption(f"Available accolade columns: {', '.join(accolade_cols_available) if accolade_cols_available else 'None'}")
+                        
+                        if "avg_team_win_pct" in r.index and pd.notna(r["avg_team_win_pct"]):
+                            st.write(f"Avg Win%: {r['avg_team_win_pct']:.3f}")
+                    
+                    # HoF Index
+                    if "hof_index" in r.index:
+                        hof_idx = float(r["hof_index"])
+                        st.markdown(f"### HoF Index: **{hof_idx:.1f} / 100**")
+                        
+                        if hof_idx >= 95:
+                            verdict, color = "🏆 Elite / Inner-circle HoF", "green"
+                        elif hof_idx >= 85:
+                            verdict, color = "⭐ Strong HoF candidate", "blue"
+                        elif hof_idx >= 70:
+                            verdict, color = "🎯 Borderline HoF", "orange"
+                        elif hof_idx >= 50:
+                            verdict, color = "✅ Solid career", "gray"
+                        else:
+                            verdict, color = "📊 Role player", "lightgray"
+                        
+                        st.markdown(f"**{verdict}**")
+                        
+                        fig, ax = plt.subplots(figsize=(8, 1.5))
+                        ax.barh([0], [hof_idx], height=0.5, color=color)
+                        ax.set_xlim(0, 100)
+                        ax.set_ylim(-0.5, 0.5)
+                        ax.set_yticks([])
+                        ax.set_xlabel("HoF Index (0-100)")
+                        ax.set_title(f"{sel} - Enhanced HoF Index (with accolades)")
+                        ax.axvline(x=50, color='gray', linestyle='--', alpha=0.3, label='Avg')
+                        ax.axvline(x=85, color='blue', linestyle='--', alpha=0.3, label='Strong')
+                        ax.axvline(x=95, color='green', linestyle='--', alpha=0.3, label='Elite')
+                        ax.legend(loc='upper right', fontsize=8)
+                        st.pyplot(fig)
 
-        # HoF Index visualization
-        if PLOTLY_AVAILABLE:
-            fig = go.Figure()
-
-            fig.add_trace(go.Bar(
-                x=[player_for_profile],
-                y=[hof_idx],
-                marker=dict(color=color, line=dict(color="black", width=2)),
-                name="HoF Index"
-            ))
-
-            fig.add_hline(y=95, line_dash="dash", line_color="green", 
-                         annotation_text="Elite (95)", annotation_position="right")
-            fig.add_hline(y=85, line_dash="dash", line_color="blue", 
-                         annotation_text="Strong (85)", annotation_position="right")
-            fig.add_hline(y=70, line_dash="dash", line_color="orange", 
-                         annotation_text="Borderline (70)", annotation_position="right")
-            fig.add_hline(y=50, line_dash="dash", line_color="gray", 
-                         annotation_text="Average (50)", annotation_position="right")
-
-            fig.update_layout(
-                title=f"{player_for_profile} - Enhanced HoF Index",
-                yaxis_title="Index (0-100)",
-                height=400,
-                showlegend=False,
-                xaxis=dict(showticklabels=False)
-            )
-
-            fig.update_yaxes(range=[0, 105])
-
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.write(f"HoF Index: {hof_idx:.1f} / 100 - {verdict}")
-
+    # Download
     st.markdown("---")
-
-    # Download data
-    st.markdown("### ⬇️ Export Data")
-
-    csv_buffer = career_filtered[[c for c in ["player_name", "seasons", "games", "tot_pts", 
-                                               "tot_reb", "tot_ast", "mvp", "all_star", 
-                                               "championships", "hof_index"]
-                                  if c in career_filtered.columns]].to_csv(index=False)
+    def to_csv(df):
+        return df.to_csv(index=False).encode("utf-8")
 
     st.download_button(
-        label="📥 Download Career Data (CSV)",
-        data=csv_buffer,
-        file_name="nba_career_hof_index.csv",
-        mime="text/csv",
-        key="download_csv"
+        "⬇️ Download career table with accolades & HoF Index",
+        data=to_csv(career_df),
+        file_name="career_with_accolades_hof_index.csv",
+        mime="text/csv"
     )
-
-st.markdown("---")
-st.caption(
-    "🏀 **NBA Analytics & Hall of Fame Index Dashboard** | "
-    "CMSE 830 Final Project | Created by Aditya Sudarsan Anand"
-)
