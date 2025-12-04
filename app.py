@@ -59,17 +59,31 @@ def load_kaggle_csv(dataset_id: str, prefer_contains=None) -> pd.DataFrame:
 @st.cache_data(show_spinner=True)
 def load_all_raw():
     """Load player stats, boxscores, team records, and COMPREHENSIVE awards data."""
-    players_raw = load_kaggle_csv("drgilermo/nba-players-stats")
-    boxscores_raw = load_kaggle_csv("szymonjwiak/nba-traditional")
-    seasons_raw = load_kaggle_csv("boonpalipatana/nba-season-records-from-every-year")
+    try:
+        players_raw = load_kaggle_csv("drgilermo/nba-players-stats")
+    except Exception as e:
+        st.error(f"Failed to load players dataset: {e}")
+        players_raw = pd.DataFrame()
+    
+    try:
+        boxscores_raw = load_kaggle_csv("szymonjwiak/nba-traditional")
+    except Exception as e:
+        st.error(f"Failed to load boxscores dataset: {e}")
+        boxscores_raw = pd.DataFrame()
+    
+    try:
+        seasons_raw = load_kaggle_csv("boonpalipatana/nba-season-records-from-every-year")
+    except Exception as e:
+        st.error(f"Failed to load seasons dataset: {e}")
+        seasons_raw = pd.DataFrame()
     
     # Load COMPREHENSIVE accolades dataset (has everything!)
     accolades_raw = pd.DataFrame()
     try:
         accolades_raw = load_kaggle_csv("ryanschubertds/all-nba-aba-players-bio-stats-accolades")
-        st.success(f"✅ Loaded comprehensive accolades dataset: {len(accolades_raw)} rows, columns: {list(accolades_raw.columns)[:10]}")
+        st.success(f"✅ Loaded comprehensive accolades: {len(accolades_raw)} rows")
     except Exception as e:
-        st.warning(f"⚠️ Comprehensive accolades dataset not found: {e}")
+        st.warning(f"⚠️ Comprehensive accolades not available: {str(e)[:100]}")
     
     # Load MVP voting dataset as backup
     mvp_raw = pd.DataFrame()
@@ -77,7 +91,7 @@ def load_all_raw():
         mvp_raw = load_kaggle_csv("robertsunderhaft/nba-player-season-statistics-with-mvp-win-share")
         st.info(f"Loaded MVP dataset: {len(mvp_raw)} rows")
     except Exception as e:
-        st.warning(f"MVP dataset not available: {e}")
+        st.info(f"MVP dataset not available: {str(e)[:50]}")
     
     # Load All-Star data
     allstar_raw = pd.DataFrame()
@@ -85,7 +99,7 @@ def load_all_raw():
         allstar_raw = load_kaggle_csv("ahmedbendaly/nba-all-star-game-data", prefer_contains="players")
         st.info(f"Loaded All-Star dataset: {len(allstar_raw)} rows")
     except Exception as e:
-        st.warning(f"All-Star dataset not available: {e}")
+        st.info(f"All-Star dataset not available: {str(e)[:50]}")
 
     return players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw
 
@@ -95,7 +109,15 @@ def load_all_raw():
 # --------------------------------------------------
 @st.cache_data(show_spinner=True)
 def build_clean_tables():
-    players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw = load_all_raw()
+    try:
+        players_raw, boxscores_raw, seasons_raw, accolades_raw, mvp_raw, allstar_raw = load_all_raw()
+    except Exception as e:
+        st.error(f"Error loading datasets: {e}")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+    
+    if players_raw.empty and boxscores_raw.empty:
+        st.error("No data loaded. Please check Kaggle API credentials.")
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     # Normalize column names
     players = players_raw.copy()
