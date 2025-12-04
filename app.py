@@ -907,3 +907,57 @@ with tabs[5]:
                        data=to_csv_bytes(career_df),
                        file_name="career_with_accolades_hof_index.csv",
                        mime="text/csv")
+
+# About
+with tabs[6]:
+    st.subheader("About, Guide, and Rubric Checklist")
+    st.markdown("""
+What this app does:
+- Integrates three Kaggle datasets (boxscores, team records, accolades).
+- Cleans and standardizes names and seasons, and normalizes team names to abbreviations for joins.
+- Builds season and career tables; computes an accolade-driven Hall of Fame Index (0 to 100).
+- Provides EDA (heatmap, histogram, line, scatter vs win%), Player Explorer, Comparison, and a Modeling suite.
+
+Advanced features:
+- Caching (@st.cache_data), session state, cross validation, permutation importances, parallel Random Forest, CSV exports.
+
+Rubric checklist:
+1. Data: 3 sources; advanced cleaning; complex joins (name-key fallback, team abbreviations).
+2. EDA: 5+ visualization types; correlations and distributions.
+3. Feature Engineering: per-game rates, aggregates, name keys, team abbr mapping.
+4. Modeling: 2 models on 2 tasks; evaluation (RMSE/MAE/R2, Confusion Matrix/ROC/F1/AUC), CV, comparison.
+5. Streamlit: 5+ interactives, docs tab, caching, session state.
+6. GitHub: Export README and CSVs from app; push with code and data dictionary.
+
+Data Dictionary (key fields)
+- season_df: year, player_name, team (abbr), games, pts, reb, ast, stl, blk, win_pct
+- career_df: player_name, from_year, to_year, seasons, games, tot_pts, tot_reb, tot_ast, avg_team_win_pct, accolades..., hof_index
+- team_season_df: year, team (abbr), win_pct, stats and *_per_game features
+""")
+
+    readme = (
+        "# NBA Analytics & HoF Index (Accolade-Driven)\n\n"
+        "## Data\n"
+        "- szymonjwiak/nba-traditional (player boxscores)\n"
+        "- boonpalipatana/nba-season-records-from-every-year (team wins/losses -> win_pct)\n"
+        "- ryanschubertds/all-nba-aba-players-bio-stats-accolades (awards)\n\n"
+        "## Cleaning & Integration\n"
+        "- Name normalization + canonical name_key (first + last, suffix removed)\n"
+        "- Team names -> abbreviations to join boxscores with team records\n"
+        "- Season parsing (e.g., 2016-17 -> 2016)\n"
+        "- Accolade standardization + totals (All-NBA, All-Defense)\n\n"
+        "## Feature Engineering\n"
+        "- Career totals and avg_team_win_pct\n"
+        "- Team-season aggregates + per-game rates\n"
+        "- Hall of Fame Index via z-scores + weights; percentile scaled\n\n"
+        "## Modeling\n"
+        "- Regression: Team Win% (LinearRegression, RandomForestRegressor). Metrics: RMSE/MAE/R2 + KFold CV\n"
+        "- Classification: Elite HoF (index >= threshold) using production-only features (LogisticRegression, RandomForestClassifier). Metrics: Accuracy/Precision/Recall/F1/ROC AUC + Stratified KFold CV\n\n"
+        "## Run\n"
+        "streamlit run app.py\n\n"
+        "## Exports\n"
+        "- career_with_accolades_hof_index.csv\n"
+        "- regression_predictions.csv\n"
+        "- classification_predictions.csv\n"
+    )
+    st.download_button("Download README.md", data=readme, file_name="README.md", mime="text/markdown")
