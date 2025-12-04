@@ -45,9 +45,7 @@ ACC_MAPPING: Dict[str, List[str]] = {
 }
 
 HOF_WEIGHTS: Dict[str, float] = {
-    # production & context
     "seasons": 1.0, "games": 0.6, "tot_pts": 0.7, "tot_reb": 0.35, "tot_ast": 0.45, "avg_team_win_pct": 1.2,
-    # accolades (why: priors from HoF signal importance)
     "mvp": 15.0, "finals_mvp": 12.0, "championships": 8.0, "dpoy": 5.0,
     "all_nba_first": 4.0, "all_nba_total": 2.5, "all_star": 2.0,
     "all_defensive_first": 2.0, "all_defensive_total": 1.0,
@@ -80,7 +78,6 @@ def _first_existing_column(df: pd.DataFrame, candidates: Iterable[str]) -> Optio
     return None
 
 def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step: int = 1, key: Optional[str] = None) -> int:
-    # why: Streamlit slider crashes if min==max or invalid step
     if max_value is None or min_value is None:
         return value
     max_value = int(max_value); min_value = int(min_value); value = int(value)
@@ -93,14 +90,8 @@ def safe_int_slider(label: str, min_value: int, max_value: int, value: int, step
     return st.slider(label, min_value=min_value, max_value=max_value, value=value, step=step, key=key)
 
 def canonical_name_key(name: str) -> str:
-    """
-    Canonical key for cross-dataset joins (why: fix 'Kobe Bean Bryant' vs 'Kobe Bryant').
-    - lowercase, letters/spaces only
-    - drop suffixes (jr/sr/ii/iii/iv/v)
-    - keep FIRST + LAST token only
-    """
-    if not isinstance(name, str):
-        return ""
+    """why: join across datasets with middle names/suffixes differences."""
+    if not isinstance(name, str): return ""
     s = name.strip().lower()
     s = "".join(ch for ch in s if ch.isalpha() or ch.isspace())
     tokens = [t for t in s.split() if t]
@@ -304,20 +295,25 @@ def build_tables() -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if not career_df.empty and "player_name" in career_df.columns:
         career_df["name_key"] = career_df["player_name"].apply(canonical_name_key)
 
-    # two-step accolades merge (exact, then key)
+    # two-step accolades merge (exact, then key via map)
     award_cols_set = set(ACC_MAPPING.keys()) | {"all_nba_total","all_defensive_total"}
     award_cols = [c for c in acc.columns if c in award_cols_set]
 
     if not acc.empty and not career_df.empty:
-        merged = career_df.merge(acc[["player_name"] + ([ "name_key" ] if "name_key" in acc.columns else []) + award_cols],
-                                 on="player_name", how="left", suffixes=("", "_acc"))
+        # exact-name merge first
+        cols_for_exact = ["player_name"] + (["name_key"] if "name_key" in acc.columns else []) + award_cols
+        merged = career_df.merge(acc[cols_for_exact], on="player_name", how="left", suffixes=("", "_acc"))
+
         if award_cols:
+            # rows still missing ALL awards after exact-name merge
             need_fill = merged[award_cols].isna().all(axis=1)
-            if "name_key" in merged.columns and "name_key" in acc.columns and need_fill.any():
-                acc_key = acc[["name_key"] + award_cols].drop_duplicates()
-                fallback = merged.loc[need_fill, ["name_key"]].merge(acc_key, on="name_key", how="left")
+            if need_fill.any() and "name_key" in merged.columns and "name_key" in acc.columns:
+                # one row per key to avoid many-to-many explosion
+                acc_key = acc.groupby("name_key")[award_cols].max()
+                # map each award individually to align lengths
+                key_series = merged.loc[need_fill, "name_key"]
                 for col in award_cols:
-                    merged.loc[need_fill, col] = fallback[col].values
+                    merged.loc[need_fill, col] = key_series.map(acc_key[col]).values
         career_df = merged
 
     # fill award NaNs to 0
@@ -538,7 +534,7 @@ with tabs[4]:
                     else: verdict, color = "📊 Role player", "lightgray"
                     st.markdown(f"**{verdict}**")
                     fig, ax = plt.subplots(figsize=(8, 1.6))
-                    ax.barh([0], [hof_idx], height=0.5, color=color)  # why: fast perception of score
+                    ax.barh([0], [hof_idx], height=0.5, color=color)
                     ax.set_xlim(0, 100); ax.set_yticks([]); ax.set_xlabel("HoF Index (0–100)")
                     ax.axvline(x=50, color='gray', linestyle='--', alpha=0.3, label='Avg')
                     ax.axvline(x=85, color='blue', linestyle='--', alpha=0.3, label='Strong')
