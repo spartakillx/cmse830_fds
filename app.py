@@ -867,7 +867,7 @@ with tabs[6]:
 """)
 
     # README content for repo
-    readme = f"""# NBA Analytics & HoF Index (Accolade-Driven)
+    readme = """# NBA Analytics & HoF Index (Accolade-Driven)
 
 ## Data
 - szymonjwiak/nba-traditional (player boxscores, season_id → year)
