@@ -503,20 +503,30 @@ with tabs[3]:
         sel_team2 = st.selectbox("Select team", team_list2)
         tdf2 = season_df[season_df["team"] == sel_team2]
 
+        # Build aggregation dict more carefully
         agg_cols2 = {}
         for c in ["pts", "reb", "ast"]:
             if c in tdf2.columns:
                 agg_cols2[c] = "sum"
+        
+        # Handle games separately
         if "games" in tdf2.columns:
             agg_cols2["games"] = "sum"
+        
+        # Only aggregate if we have something to aggregate
+        if agg_cols2:
+            team_season_stats = (
+                tdf2.groupby("year")
+                .agg(agg_cols2)
+                .reset_index()
+            )
         else:
-            agg_cols2["games"] = "size"
-
-        team_season_stats = (
-            tdf2.groupby("year")
-            .agg(agg_cols2)
-            .reset_index()
-        )
+            # If no columns to aggregate, just count
+            team_season_stats = (
+                tdf2.groupby("year")
+                .size()
+                .reset_index(name="count")
+            )
 
         st.markdown(f"### {sel_team2} – season totals (aggregated from boxscores)")
         st.dataframe(team_season_stats)
